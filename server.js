@@ -1,12 +1,23 @@
 const express=require('express');
 const http=require('http');
 const {Server}=require('socket.io');
+const crypto=require('crypto');
+const QRCode=require('qrcode');
 
 const app=express();
 const server=http.createServer(app);
 const io=new Server(server,{cors:{origin:'*'}});
 app.use(express.static('public'));
 app.get('/health',(_,res)=>res.status(200).send('ok'));
+app.get('/api/qr',async(req,res)=>{
+ try{
+  const room=String(req.query.room||'').replace(/\D/g,'').slice(0,4);
+  if(!room)return res.status(400).send('room required');
+  const joinUrl=`${req.protocol}://${req.get('host')}/?room=${room}`;
+  const png=await QRCode.toBuffer(joinUrl,{type:'png',width:320,margin:2,errorCorrectionLevel:'M'});
+  res.type('png').send(png);
+ }catch(e){res.status(500).send('QR error')}
+});
 
 const rooms=new Map();
 const MAP={w:2200,h:1350,floors:3};
@@ -51,7 +62,7 @@ function playerView(p){
  return{
   id:p.id,nick:p.nick,role:p.role,alive:p.alive,ghost:p.ghost,revealed:p.revealed,miss:p.miss,
   x:p.x,y:p.y,floor:p.floor,angle:p.angle,boostUsed:p.boostUsed,boostUntil:p.boostUntil,
-  bubble:p.bubble,bubbleUntil:p.bubbleUntil,jumpStart:p.jumpStart||0,jumpUntil:p.jumpUntil||0,appearance:p.appearance
+  bubble:p.bubble,bubbleUntil:p.bubbleUntil,jumpStart:p.jumpStart||0,jumpUntil:p.jumpUntil||0,appearance:p.appearance,connected:p.connected!==false
  };
 }
 function lobby(r){return{code:r.code,spies:r.spies,minutes:r.minutes,npcCount:r.spies*7,players:[...r.players.values()].map(p=>({id:p.id,nick:p.nick}))}}
@@ -121,9 +132,23 @@ io.on('connection',socket=>{
   nick=String(nick||'').trim().slice(0,12);if(!nick)return cb?.({ok:false,error:'닉네임을 입력하세요.'});
   if([...r.players.values()].some(p=>p.nick===nick))return cb?.({ok:false,error:'이미 사용 중인 닉네임입니다.'});
   const s=spawn(Math.floor(rand(1,4)));
-  const p={id:socket.id,nick,role:null,alive:true,ghost:false,revealed:false,miss:0,x:s.x,y:s.y,floor:s.floor,angle:0,
-   boostUsed:false,boostUntil:0,bubble:'',bubbleUntil:0,jumpStart:0,jumpUntil:0,appearance:randomAppearance(),stairCooldownUntil:0,lastChatAt:0};
-  r.players.set(socket.id,p);socket.join(r.code);socket.data.room=r.code;socket.data.teacher=false;cb?.({ok:true,id:p.id});pushLobby(r)
+  const playerId=crypto.randomUUID();
+  const reconnectToken=crypto.randomUUID();
+  const p={id:playerId,socketId:socket.id,reconnectToken,nick,role:null,alive:true,ghost:false,revealed:false,miss:0,x:s.x,y:s.y,floor:s.floor,angle:0,
+   boostUsed:false,boostUntil:0,bubble:'',bubbleUntil:0,jumpStart:0,jumpUntil:0,appearance:randomAppearance(),stairCooldownUntil:0,lastChatAt:0,connected:true};
+  r.players.set(playerId,p);socket.join(r.code);socket.data.room=r.code;socket.data.playerId=playerId;socket.data.teacher=false;
+  cb?.({ok:true,id:p.id,reconnectToken,roomCode:r.code,nick:p.nick,started:r.started});pushLobby(r)
+ });
+
+ socket.on('resumeSession',({code,playerId,reconnectToken},cb)=>{
+  const r=rooms.get(String(code||''));
+  const p=r?.players.get(String(playerId||''));
+  if(!r||!p||p.reconnectToken!==reconnectToken)return cb?.({ok:false,error:'기존 참가 정보를 찾을 수 없습니다.'});
+  p.socketId=socket.id;p.connected=true;
+  socket.join(r.code);socket.data.room=r.code;socket.data.playerId=p.id;socket.data.teacher=false;
+  cb?.({ok:true,id:p.id,nick:p.nick,started:r.started,role:p.role,state:state(r),teammates:p.role==='spy'?[...r.players.values()].filter(x=>x.role==='spy'&&x.id!==p.id).map(x=>({id:x.id,nick:x.nick})):[]});
+  if(r.started){socket.emit('npcState',r.npcs);}
+  pushLobby(r);pushState(r);
  });
 
  socket.on('startGame',({code},cb)=>{
@@ -152,7 +177,7 @@ io.on('connection',socket=>{
   r.npcs=Array.from({length:r.spies*7},(_,i)=>makeNPC(i,(i%3)+1));
   r.started=true;r.ended=false;r.timeLeft=r.minutes*60;r.lastTick=Date.now();
 
-  for(const p of list)io.to(p.id).emit('role',{role:p.role,teammates:p.role==='spy'?list.filter(x=>x.role==='spy'&&x.id!==p.id).map(x=>({id:x.id,nick:x.nick})):[]});
+  for(const p of list)io.to(p.socketId).emit('role',{role:p.role,teammates:p.role==='spy'?list.filter(x=>x.role==='spy'&&x.id!==p.id).map(x=>({id:x.id,nick:x.nick})):[]});
   io.to(r.code).emit('gameStarted',{npcCount:r.npcs.length});io.to(r.teacherId).emit('teacherGameStarted',{...state(r),npcs:r.npcs});pushState(r);
 
   clearInterval(r.timer);
@@ -216,25 +241,25 @@ io.on('connection',socket=>{
  });
 
  socket.on('move',({x,y,angle,floor})=>{
-  const r=rooms.get(socket.data.room),p=r?.players.get(socket.id);if(!r?.started||!p)return;
+  const r=rooms.get(socket.data.room),p=r?.players.get(socket.data.playerId);if(!r?.started||!p)return;
   p.x=clamp(+x||p.x,20,MAP.w-20);p.y=clamp(+y||p.y,20,MAP.h-20);p.angle=+angle||0;if(+floor>=1&&+floor<=3)p.floor=+floor;
 
   const now=Date.now(),portal=stairPortalAt(p.x,p.y);
   if(portal&&now>(p.stairCooldownUntil||0)){
-   if(portal.direction==='up'&&p.floor<3){p.floor++;landAfterStairs(p,portal.side,'up');p.stairCooldownUntil=now+1200;io.to(p.id).emit('autoFloorChanged',{floor:p.floor,x:p.x,y:p.y,direction:'up'})}
-   else if(portal.direction==='down'&&p.floor>1){p.floor--;landAfterStairs(p,portal.side,'down');p.stairCooldownUntil=now+1200;io.to(p.id).emit('autoFloorChanged',{floor:p.floor,x:p.x,y:p.y,direction:'down'})}
+   if(portal.direction==='up'&&p.floor<3){p.floor++;landAfterStairs(p,portal.side,'up');p.stairCooldownUntil=now+1200;io.to(p.socketId).emit('autoFloorChanged',{floor:p.floor,x:p.x,y:p.y,direction:'up'})}
+   else if(portal.direction==='down'&&p.floor>1){p.floor--;landAfterStairs(p,portal.side,'down');p.stairCooldownUntil=now+1200;io.to(p.socketId).emit('autoFloorChanged',{floor:p.floor,x:p.x,y:p.y,direction:'down'})}
   }
   socket.to(r.code).emit('playerMoved',{id:p.id,x:p.x,y:p.y,angle:p.angle,floor:p.floor})
  });
 
  socket.on('jump',()=>{
-  const r=rooms.get(socket.data.room),p=r?.players.get(socket.id);if(!r?.started||!p)return;
+  const r=rooms.get(socket.data.room),p=r?.players.get(socket.data.playerId);if(!r?.started||!p)return;
   const now=Date.now();if((p.jumpUntil||0)>now)return;p.jumpStart=now;p.jumpUntil=now+650;
   io.to(r.code).emit('playerJumped',{id:p.id,jumpStart:p.jumpStart,jumpUntil:p.jumpUntil})
  });
 
  socket.on('playerChat',({text})=>{
-  const r=rooms.get(socket.data.room),p=r?.players.get(socket.id);if(!r?.started||!p)return;
+  const r=rooms.get(socket.data.room),p=r?.players.get(socket.data.playerId);if(!r?.started||!p)return;
   const now=Date.now();
   if(now-(p.lastChatAt||0)<1800)return;
   text=String(text||'').trim().replace(/\s+/g,' ').slice(0,24);
@@ -244,7 +269,7 @@ io.on('connection',socket=>{
  });
 
  socket.on('hitAttempt',()=>{
-  const r=rooms.get(socket.data.room),att=r?.players.get(socket.id);if(!r?.started||!att?.alive||att.role!=='police')return;
+  const r=rooms.get(socket.data.room),att=r?.players.get(socket.data.playerId);if(!r?.started||!att?.alive||att.role!=='police')return;
   let best=null,dist=Infinity,type=null;
   for(const p of r.players.values()){
    if(p.id===att.id||!p.alive||p.floor!==att.floor)continue;
@@ -256,11 +281,11 @@ io.on('connection',socket=>{
    const dx=n.x-att.x,dy=n.y-att.y,d=Math.hypot(dx,dy),a=Math.atan2(dy,dx),da=Math.atan2(Math.sin(a-att.angle),Math.cos(a-att.angle));
    if(d<92&&Math.abs(da)<.78&&d<dist){best=n;dist=d;type='npc'}
   }
-  io.to(att.id).emit('swingResult',{kind:best?'hit':'miss'});if(!best)return;
+  io.to(att.socketId).emit('swingResult',{kind:best?'hit':'miss'});if(!best)return;
 
   if(type==='player'&&best.role==='spy'){
    best.alive=false;best.ghost=true;best.revealed=true;best.bubble='정체가 들켰다!';best.bubbleUntil=Date.now()+1800;att.miss=0;
-   io.to(r.code).emit('spyCaught',{spyId:best.id,by:att.id,policeMissReset:true});io.to(att.id).emit('lifeReset',{miss:0});
+   io.to(r.code).emit('spyCaught',{spyId:best.id,by:att.id,policeMissReset:true});io.to(att.socketId).emit('lifeReset',{miss:0});
    const left=[...r.players.values()].filter(p=>p.role==='spy'&&p.alive).length;if(left===0)finish(r,'police','모든 스파이를 검거했습니다.')
   }else{
    att.miss++;const text=choice(['윽! 왜 때려?','나 학생이야!','아야! 억울해!','저 아니라고요!','왜 저를 쳐요?!']);best.bubble=text;best.bubbleUntil=Date.now()+1800;
@@ -270,14 +295,14 @@ io.on('connection',socket=>{
  });
 
  socket.on('useBoost',()=>{
-  const r=rooms.get(socket.data.room),p=r?.players.get(socket.id);if(!r?.started||!p?.alive||p.role!=='spy'||p.boostUsed||r.timeLeft>r.minutes*60/2)return;
+  const r=rooms.get(socket.data.room),p=r?.players.get(socket.data.playerId);if(!r?.started||!p?.alive||p.role!=='spy'||p.boostUsed||r.timeLeft>r.minutes*60/2)return;
   p.boostUsed=true;p.boostUntil=Date.now()+10000;p.bubble=choice(TAUNTS);p.bubbleUntil=p.boostUntil;
   io.to(r.code).emit('boosted',{id:p.id,until:p.boostUntil,text:p.bubble,bubbleUntil:p.bubbleUntil})
  });
 
  socket.on('requestNPCs',()=>{const r=rooms.get(socket.data.room);if(r)socket.emit('npcState',r.npcs)});
  socket.on('teacherRequestState',({code})=>{const r=rooms.get(String(code||''));if(r&&socket.id===r.teacherId)socket.emit('teacherState',{...state(r),npcs:r.npcs})});
- socket.on('disconnect',()=>{const r=rooms.get(socket.data.room);if(!r)return;if(socket.id===r.teacherId){clearInterval(r.timer);clearInterval(r.npcTimer);io.to(r.code).emit('roomClosed');rooms.delete(r.code)}else{r.players.delete(socket.id);pushLobby(r);if(r.started)pushState(r)}})
+ socket.on('disconnect',()=>{const r=rooms.get(socket.data.room);if(!r)return;if(socket.id===r.teacherId){clearInterval(r.timer);clearInterval(r.npcTimer);io.to(r.code).emit('roomClosed');rooms.delete(r.code)}else{const p=r.players.get(socket.data.playerId);if(p&&p.socketId===socket.id){p.connected=false;p.socketId=null;}pushLobby(r);if(r.started)pushState(r)}})
 });
 
 server.listen(process.env.PORT||3000,'0.0.0.0',()=>console.log('Spy School v8 fixed server started'));

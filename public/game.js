@@ -11,24 +11,43 @@ function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classL
 function toast(t){$('toast').textContent=t;$('toast').style.opacity=1;clearTimeout(toast.t);toast.t=setTimeout(()=>$('toast').style.opacity=0,1400)}
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 function fmt(t){t=Math.max(0,t||0);return `${String(Math.floor(t/60)).padStart(2,'0')}:${String(Math.floor(t%60)).padStart(2,'0')}`}
-
-$('spies').oninput=()=>$('npcNum').textContent=(Math.max(1,Math.min(15,+$('spies').value||1))*7)+'명';
-
-$('createRoom').onclick=()=>{mode='teacher';socket.emit('createRoom',{spies:+$('spies').value,minutes:+$('mins').value},r=>{if(!r.ok)return alert(r.error||'방 생성 실패');roomCode=r.code;$('roomCode').textContent=r.code;showScreen('teacherLobby')})};
-$('joinRoom').onclick=()=>{mode='student';socket.emit('joinRoom',{code:$('joinCode').value.trim(),nick:$('nickname').value.trim()},r=>{if(!r.ok){$('joinMessage').textContent=r.error;return}meId=r.id;roomCode=$('joinCode').value.trim();$('waitCode').textContent=roomCode;showScreen('studentWait')})};
-$('startGame').onclick=()=>socket.emit('startGame',{code:roomCode},r=>{if(!r.ok)alert(r.error)});
-
-socket.on('lobby',r=>{if(mode==='teacher'){$('joinCount').textContent=`참가 ${r.players.length}명`;$('joinList').innerHTML=r.players.map(p=>`<span class="chip">${p.nick}</span>`).join('')}});
-socket.on('role',r=>{
- myRole=r.role;teammates=r.teammates||[];
+const SESSION_KEY='spySchoolStudentSessionV9';
+function saveSession(data){localStorage.setItem(SESSION_KEY,JSON.stringify(data))}
+function loadSession(){try{return JSON.parse(localStorage.getItem(SESSION_KEY)||'null')}catch{return null}}
+function clearSession(){localStorage.removeItem(SESSION_KEY)}
+function buildJoinUrl(code){return `${location.origin}/?room=${encodeURIComponent(code)}`}
+function applyRoleUI(role, mates=[]){
+ myRole=role;teammates=mates||[];
  $('roleTitle').textContent=myRole==='spy'?'🕵️ 당신은 스파이!':'🚔 당신은 경찰!';
  $('roleText').textContent=myRole==='spy'
-  ?`NPC와 똑같은 학생 외형입니다. 다른 스파이: ${teammates.map(x=>x.nick).join(', ')||'없음'} — NPC처럼 걷고 멈추고 점프하고 말풍선도 쓰면서 숨어 보세요. 후반에는 10초 부스터 1회!`
-  :'NPC와 스파이는 외형으로 구분할 수 없습니다. 행동을 관찰하세요. 일반 학생 3회 오인 시 탈락하지만 스파이 검거 시 ❤️❤️❤️ 완전 회복!';
- showScreen('roleScreen')
-});
+  ?`다른 학생들과 똑같은 모습입니다. 다른 스파이: ${teammates.map(x=>x.nick).join(', ')||'없음'} — 학생처럼 걷고 멈추고 점프하고 말풍선도 쓰면서 숨어 보세요. 후반에는 10초 부스터 1회!`
+  :'학생과 스파이는 외형으로 구분할 수 없습니다. 행동을 관찰하세요. 일반 학생 3회 오인 시 탈락하지만 스파이 검거 시 ❤️❤️❤️ 완전 회복!';
+}
+function openPlayerGame(){
+ document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));
+ $('playerGame').style.display='block';started=true;socket.emit('requestNPCs');
+}
+function resumeSavedSession(){
+ const sess=loadSession();if(!sess||mode==='teacher')return;
+ socket.emit('resumeSession',sess,r=>{
+  if(!r?.ok){clearSession();return;}
+  mode='student';roomCode=sess.code;meId=r.id;
+  if(r.state)applyState(r.state);
+  if(r.started&&r.role){applyRoleUI(r.role,r.teammates||[]);openPlayerGame();toast('다시 연결되었습니다!')}
+  else{$('waitCode').textContent=roomCode;showScreen('studentWait')}
+ });
+}
 
-$('enterGame').onclick=()=>{document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$('playerGame').style.display='block';started=true;socket.emit('requestNPCs')};
+
+$('createRoom').onclick=()=>{mode='teacher';socket.emit('createRoom',{spies:+$('spies').value,minutes:+$('mins').value},r=>{if(!r.ok)return alert(r.error||'방 생성 실패');roomCode=r.code;$('roomCode').textContent=r.code;const u=buildJoinUrl(r.code);$('joinQr').src=`/api/qr?room=${encodeURIComponent(r.code)}`;$('joinUrlText').textContent=u;showScreen('teacherLobby')})};
+$('joinRoom').onclick=()=>{mode='student';const code=$('joinCode').value.trim();const nick=$('nickname').value.trim();socket.emit('joinRoom',{code,nick},r=>{if(!r.ok){$('joinMessage').textContent=r.error;return}meId=r.id;roomCode=code;saveSession({code,playerId:r.id,reconnectToken:r.reconnectToken,nick});$('waitCode').textContent=roomCode;showScreen('studentWait')})};
+$('startGame').onclick=()=>socket.emit('startGame',{code:roomCode},r=>{if(!r.ok)alert(r.error)});
+$('copyJoinLink').onclick=async()=>{try{await navigator.clipboard.writeText(buildJoinUrl(roomCode));$('copyJoinLink').textContent='복사됨!';setTimeout(()=>$('copyJoinLink').textContent='참가 링크 복사',1200)}catch{prompt('이 링크를 복사하세요.',buildJoinUrl(roomCode))}};
+
+socket.on('lobby',r=>{if(mode==='teacher'){$('joinCount').textContent=`참가 ${r.players.length}명`;$('joinList').innerHTML=r.players.map(p=>`<span class="chip">${p.nick}</span>`).join('')}});
+socket.on('role',r=>{applyRoleUI(r.role,r.teammates||[]);showScreen('roleScreen')});
+
+$('enterGame').onclick=openPlayerGame;
 socket.on('teacherGameStarted',s=>{if(mode!=='teacher')return;document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));$('teacherGame').style.display='block';started=true;applyState(s);socket.emit('teacherRequestState',{code:roomCode})});
 socket.on('teacherState',s=>{if(mode==='teacher'){applyState(s);npcs=s.npcs||[]}});
 
@@ -289,6 +308,17 @@ function drawTeacherView(){
  tg.restore();
 
  $('teacherTimer').textContent=fmt(timeLeft);
- $('teacherStats').textContent=`경찰 ${Object.values(players).filter(p=>p.role==='police'&&p.alive).length}명 · 스파이 ${Object.values(players).filter(p=>p.role==='spy'&&p.alive).length}명 · NPC ${npcs.length}명`
+ $('teacherStats').textContent=`경찰 ${Object.values(players).filter(p=>p.role==='police'&&p.alive).length}명 · 스파이 ${Object.values(players).filter(p=>p.role==='spy'&&p.alive).length}명 · 학생 ${npcs.length}명`
 }
 document.querySelectorAll('#floorTabs button').forEach(b=>b.onclick=()=>selectedTeacherFloor=+b.dataset.floor);
+
+
+// QR 참가 링크로 열면 방 코드를 자동 입력하고 학생 참가 화면을 연다.
+(function initJoinFromUrl(){
+ const q=new URLSearchParams(location.search),room=q.get('room');
+ if(room){$('joinCode').value=room.replace(/\D/g,'').slice(0,4);mode='student';showScreen('studentJoin')}
+})();
+
+// 화면 잠금, 네트워크 전환, 새로고침 뒤에도 저장된 참가 정보로 복귀한다.
+socket.on('connect',()=>{setTimeout(resumeSavedSession,80)});
+setTimeout(resumeSavedSession,250);

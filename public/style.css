@@ -30,3 +30,8 @@
  #chatPanel{left:150px;bottom:18px}
  #chatMenu{width:220px}
 }
+.qrWrap{display:flex;align-items:center;gap:18px;justify-content:center;margin:18px 0;padding:14px;border-radius:14px;background:#fff;border:1px solid #ddd}
+#joinQr{width:180px;height:180px;object-fit:contain;background:#fff;border-radius:8px}
+.qrTitle{font-weight:900;margin:0 0 8px}.joinUrlText{font-size:12px;word-break:break-all;color:#555;max-width:340px}
+#copyJoinLink{padding:9px 12px!important;margin:0!important;background:#3f789b!important}
+@media(max-width:650px){.qrWrap{flex-direction:column}#joinQr{width:160px;height:160px}.joinUrlText{max-width:90%}}
