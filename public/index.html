@@ -1,0 +1,29 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>스파이를 찾아라!</title><link rel="stylesheet" href="style.css"></head><body>
+<div id="home" class="screen active"><div class="card center"><h1>🕵️ 스파이를 찾아라!</h1><p>학교 안 NPC 학생 사이에 숨어 있는 스파이를 찾아라!</p><button onclick="showScreen('teacherSetup')">👩‍🏫 교사 방 만들기</button><button onclick="showScreen('studentJoin')">🎒 학생 참가</button></div></div>
+<div id="teacherSetup" class="screen"><div class="card"><h2>교사 게임 설정</h2><div class="grid2"><label>스파이 수<input id="spies" type="number" min="1" max="15" value="4"></label><label>게임 시간(분)<input id="mins" type="number" min="1" max="20" value="5"></label></div><p>NPC 학생: <b id="npcNum">28명</b> (스파이 수 × 7)</p><button id="createRoom">방 만들기</button></div></div>
+<div id="teacherLobby" class="screen"><div class="card"><h2>교사 대기실</h2><div class="roomCodeLabel">방 코드</div><div id="roomCode" class="roomCode">0000</div><p id="joinCount">참가 0명</p><div id="joinList" class="chips"></div><button id="startGame">역할 배정 후 게임 시작</button></div></div>
+<div id="studentJoin" class="screen"><div class="card"><h2>학생 참가</h2><input id="joinCode" maxlength="4" inputmode="numeric" placeholder="방 코드 4자리"><input id="nickname" maxlength="12" placeholder="닉네임"><button id="joinRoom">참가하기</button><p id="joinMessage"></p></div></div>
+<div id="studentWait" class="screen"><div class="card center"><h2>입장 완료!</h2><p>교사가 게임을 시작할 때까지 기다리세요.</p><div id="waitCode" class="roomCode"></div></div></div>
+<div id="roleScreen" class="screen"><div class="card center"><h1 id="roleTitle"></h1><p id="roleText"></p><button id="enterGame">학교 입장</button></div></div>
+<div id="playerGame" class="gameLayer"><canvas id="gameCanvas"></canvas><div id="hud"><div class="hudBox" id="roleHud">-</div><div class="hudBox" id="timerHud">00:00</div><div class="hudBox" id="floorHud">1층</div><div class="hudBox" id="spyHud">스파이 0</div></div><div id="toast"></div>
+  
+  <div id="chatPanel">
+    <button id="chatToggle">💬 말하기</button>
+    <div id="chatMenu">
+      <button data-msg="같이 가자~">같이 가자~</button>
+      <button data-msg="쉬는 시간이다!">쉬는 시간이다!</button>
+      <button data-msg="오늘 급식 뭐지?">오늘 급식 뭐지?</button>
+      <button data-msg="ㅋㅋㅋ">ㅋㅋㅋ</button>
+      <div class="chatCustom">
+        <input id="chatInput" maxlength="24" placeholder="짧은 말 입력">
+        <button id="chatSend">보내기</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="stairsHint">계단의 ▲구역에 들어가면 위층 · ▼구역에 들어가면 아래층</div><button id="boostBtn" class="roundBtn">🚀<small>부스터</small></button><button id="attackBtn" class="roundBtn">🏏<small>공격</small></button>
+  <button id="jumpBtn" class="roundBtn">⬆️<small>점프</small></button>
+<div id="joystickBase"><div id="joystickKnob"></div></div></div>
+<div id="teacherGame" class="gameLayer"><canvas id="teacherCanvas"></canvas><div id="teacherTop"><div class="hudBox">👩‍🏫 교사 관전</div><div class="hudBox" id="teacherTimer">00:00</div><div class="hudBox" id="teacherStats">-</div></div><div id="floorTabs"><button data-floor="1">1층</button><button data-floor="2">2층</button><button data-floor="3">3층</button></div><div id="teacherLegend">🔵 경찰 &nbsp; 🔴 스파이 &nbsp; ⚪ NPC &nbsp; 👻 탈락</div></div>
+<div id="endScreen" class="screen"><div class="card center"><h1 id="endTitle"></h1><p id="endText"></p><button onclick="location.reload()">처음으로</button></div></div>
+<script src="/socket.io/socket.io.js"></script><script src="game.js"></script></body></html>
