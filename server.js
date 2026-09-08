@@ -185,7 +185,7 @@ function pickNPCActivity(n,now){
 }
 
 function distributeNPCs(r){
- const total=r.spies*11;
+ const total=r.spies*7;
  r.npcs=[];
  for(let i=0;i<total;i++){
    const area=i%4; // exactly balanced across yard, floors 1,2,3 (difference <=1)
