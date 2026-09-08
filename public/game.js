@@ -19,6 +19,22 @@ function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':
 function audioCtx(){if(!window._ac)window._ac=new (window.AudioContext||window.webkitAudioContext)();try{window._ac.resume()}catch{}return window._ac}
 function tone(freq=440,dur=.12,type='sine',gain=.05,delay=0){try{const ac=audioCtx(),o=ac.createOscillator(),v=ac.createGain(),t=ac.currentTime+delay;o.type=type;o.frequency.setValueAtTime(freq,t);v.gain.setValueAtTime(gain,t);v.gain.exponentialRampToValueAtTime(.001,t+dur);o.connect(v).connect(ac.destination);o.start(t);o.stop(t+dur+.02)}catch{}}
 function sceneSound(k='move'){if(k==='start'){tone(480,.1,'sine',.06);tone(680,.12,'sine',.06,.1);tone(920,.18,'sine',.06,.22)}else if(k==='floor'){tone(560,.08,'sine',.05);tone(780,.1,'sine',.05,.07)}else if(k==='end'){tone(660,.16,'triangle',.06);tone(520,.18,'triangle',.06,.16)}else tone(430,.07,'sine',.035)}
+
+function fanfareSound(){
+ try{
+  const notes=[
+    [523.25,.00,.15],[659.25,.00,.15],[783.99,.00,.15],
+    [659.25,.18,.14],[783.99,.18,.14],[1046.50,.18,.22],
+    [783.99,.40,.15],[987.77,.40,.15],[1174.66,.40,.15],
+    [1046.50,.62,.20],[1318.51,.62,.20],[1567.98,.62,.32]
+  ];
+  notes.forEach(([f,durStart,dur])=>tone(f,dur,'triangle',.055,durStart));
+  tone(261.63,.55,'sine',.035,.00);
+  tone(392.00,.55,'sine',.035,.18);
+  tone(523.25,.75,'sine',.035,.40);
+ }catch{}
+}
+
 function whoosh(){try{const ac=audioCtx(),o=ac.createOscillator(),v=ac.createGain();o.type='sawtooth';o.frequency.setValueAtTime(650,ac.currentTime);o.frequency.exponentialRampToValueAtTime(120,ac.currentTime+.12);v.gain.setValueAtTime(.07,ac.currentTime);v.gain.exponentialRampToValueAtTime(.001,ac.currentTime+.13);o.connect(v).connect(ac.destination);o.start();o.stop(ac.currentTime+.14)}catch{}}
 function thump(){tone(105,.11,'square',.11)}
 
@@ -156,7 +172,7 @@ socket.on('gameForceEnded',e=>{
  $('myEndScore').textContent=mode==='student'?`내 누적 점수: ⭐ ${myScore()}점`:'';
  $('teacherEndActions').style.display=mode==='teacher'?'flex':'none';
  $('studentEndWait').style.display=mode==='student'?'block':'none';
- updateScoreUI();showScreen('endScreen',true);sceneSound('end');
+ updateScoreUI();showScreen('endScreen',true);fanfareSound();
 });
 
 socket.on('roomClosed',()=>{alert('교사가 방을 종료했습니다.');clearSession();location.reload()});
@@ -206,7 +222,7 @@ const EXIT_PORTALS=[
  {name:'오른쪽 출입구',x1:2960,x2:3120}
 ];
 const ROOM_WALLS=(()=>{
- const a=[],xs=[130,1110,2090],topY=90,bottomY=1510,w=820,h=360,t=18,door=100;
+ const a=[],xs=[130,1110,2090],topY=90,bottomY=1370,w=820,h=360,t=18,door=100;
  for(const x of xs){
   a.push({x,y:topY,w,h:t},{x,y:topY,w:t,h},{x:x+w-t,y:topY,w:t,h});
   let dg=x+w/2-door/2;a.push({x,y:topY+h-t,w:dg-x,h:t},{x:dg+door,y:topY+h-t,w:x+w-(dg+door),h:t});
@@ -244,21 +260,49 @@ function resolveMoveLocal(p,nx,ny){
  if(!blockedLocal(p,p.x,ny))p.y=ny;
 }
 function entranceAtX(x){return EXIT_PORTALS.find(e=>x>=e.x1&&x<=e.x2)}
+function touchesRect(px,py,r,rect){
+ return px+r>=rect.x1&&px-r<=rect.x2&&py+r>=rect.y1&&py-r<=rect.y2;
+}
 function checkPortalLocal(p){
  if(currentPhase!=='playing'||Date.now()<localPortalCooldown)return;
- const left=p.x>=135&&p.x<=225,right=p.x>=2975&&p.x<=3065;
- if(p.floor>0&&(left||right)){
-  const side=left?'left':'right';
-  if(p.y>=675&&p.y<=709&&p.floor<3){p.floor++;p.x=side==='left'?315:MAP.w-315;p.y=795;transitionLocal(p,`${p.floor}층`);return}
-  if(p.y>=780&&p.y<=814&&p.floor>1){p.floor--;p.x=side==='left'?315:MAP.w-315;p.y=690;transitionLocal(p,`${p.floor}층`);return}
+
+ // 계단 그래픽과 정확히 같은 네모칸 좌표.
+ // 캐릭터 중심이 안에 들어가야 하는 방식이 아니라, 캐릭터 몸(반지름 20px)이
+ // 네모칸에 조금이라도 닿는 순간 바로 층 이동한다.
+ if(p.floor>0){
+  const stairZones=[
+   {side:'left', dir:'up',   x1:145,x2:235,y1:675,y2:709},
+   {side:'left', dir:'down', x1:145,x2:235,y1:780,y2:814},
+   {side:'right',dir:'up',   x1:2965,x2:3055,y1:675,y2:709},
+   {side:'right',dir:'down', x1:2965,x2:3055,y1:780,y2:814}
+  ];
+  const hit=stairZones.find(z=>touchesRect(p.x,p.y,20,z));
+  if(hit){
+   if(hit.dir==='up'&&p.floor<3){
+    p.floor++;
+    // 새 층에서는 계단 네모 밖 복도에 착지시켜 재판정/튕김 방지
+    p.x=hit.side==='left'?330:MAP.w-330;
+    p.y=742;
+    transitionLocal(p,`${p.floor}층`);
+    return;
+   }
+   if(hit.dir==='down'&&p.floor>1){
+    p.floor--;
+    p.x=hit.side==='left'?330:MAP.w-330;
+    p.y=742;
+    transitionLocal(p,`${p.floor}층`);
+    return;
+   }
+  }
  }
+
  // 1층 남쪽 복도 -> 운동장 3개 출입구
  const gate=entranceAtX(p.x);
  if(p.floor===1&&gate&&p.y>=1940){p.floor=0;p.y=370;transitionLocal(p,`운동장 · ${gate.name}`);return}
  // 운동장 학교 외벽의 3개 문 -> 1층 남쪽 복도
  if(p.floor===0&&gate&&p.y<=340){p.floor=1;p.y=1910;transitionLocal(p,`1층 · ${gate.name}`);return}
 }
-function transitionLocal(p,label){localPortalCooldown=Date.now()+550;sceneSound('floor');toast(`📍 ${label}`);socket.emit('portalTransition',{floor:p.floor,x:p.x,y:p.y,label})}
+function transitionLocal(p,label){localPortalCooldown=Date.now()+750;sceneSound('floor');toast(`📍 ${label}`);socket.emit('portalTransition',{floor:p.floor,x:p.x,y:p.y,label})}
 
 function lerpEntities(dt){
  const f=Math.min(1,dt*14);
@@ -373,6 +417,27 @@ function drawSchool(ctx,floor){
 
  // 계단
  for(const x of [120,MAP.w-260]){rounded(ctx,x+9,645,140,230,15,'rgba(0,0,0,.18)');rounded(ctx,x,630,140,230,15,'#3a596c','#233b49');rounded(ctx,x+25,675,90,34,8,floor<3?'#5f8fa7':'#455863','#d7edf7');rounded(ctx,x+25,780,90,34,8,floor>1?'#775f7b':'#4e4750','#eaddeb');ctx.fillStyle='#fff';ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.fillText(floor<3?'▲ 위층':'막힘',x+70,698);ctx.fillText(floor>1?'▼ 아래층':'막힘',x+70,803);ctx.textAlign='left'}
+ if(floor===1){
+  // Wide exit-side corridor: clearly separated from the lower classrooms.
+  ctx.fillStyle='#a7bdc8';ctx.fillRect(80,1745,3040,205);
+  for(let x=90;x<3110;x+=100){
+    ctx.strokeStyle='rgba(255,255,255,.22)';
+    ctx.strokeRect(x,1745,100,68);
+    ctx.strokeRect(x,1813,100,68);
+    ctx.strokeRect(x,1881,100,68);
+  }
+  ctx.fillStyle='#344e5a';ctx.font='bold 22px sans-serif';
+  ctx.fillText('출구 연결 복도',1465,1780);
+
+  // Three exits: left / center / right
+  const exits=[520,1450,2380];
+  const names=['왼쪽 출구','가운데 출구','오른쪽 출구'];
+  exits.forEach((ex,idx)=>{
+    ctx.fillStyle='#315b75';ctx.fillRect(ex,1850,300,120);
+    ctx.fillStyle='#d9eff8';ctx.fillRect(ex+35,1870,110,90);ctx.fillRect(ex+155,1870,110,90);
+    ctx.fillStyle='#fff';ctx.font='bold 18px sans-serif';ctx.fillText(names[idx]+' → 운동장',ex+48,1838);
+  });
+}
  ctx.fillStyle='#415b60';ctx.font='bold 36px sans-serif';ctx.fillText(`${floor}층 중앙 복도`,1400,945);
 }
 

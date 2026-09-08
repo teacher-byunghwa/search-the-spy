@@ -103,7 +103,7 @@ const EXIT_PORTALS=[
 
 function roomWalls(){
  const rects=[];
- const xs=[130,1110,2090],topY=90,bottomY=1510,w=820,h=360,t=18,door=100;
+ const xs=[130,1110,2090],topY=90,bottomY=1370,w=820,h=360,t=18,door=100;
  for(const x of xs){
   // 윗줄 교실: 복도 쪽(아래)에 문 하나
   rects.push({x,y:topY,w,h:t},{x,y:topY,w:t,h},{x:x+w-t,y:topY,w:t,h});
