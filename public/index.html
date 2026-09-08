@@ -139,9 +139,20 @@
  <div id="teacherTop">
   <div class="hudBox">👩‍🏫 교사 관전</div><div class="hudBox bigInfo" id="teacherTimer">00:00</div><div class="hudBox" id="teacherStats">-</div>
   <button id="showQrInGame" class="teacherAction">📱 QR 다시 보기</button>
+  <button id="forceEndGameBtn" class="teacherAction dangerAction">⛔ 게임 강제 종료</button>
  </div>
 <div id="floorTabs"><button data-floor="0">운동장</button><button data-floor="1">1층</button><button data-floor="2">2층</button><button data-floor="3">3층</button></div>
  <div id="teacherLegend">🔵 경찰 &nbsp; 🔴 스파이 &nbsp; ⚪ 학생 &nbsp; 👻 탈락</div>
+
+ <div id="teacherChatPanel">
+  <div class="teacherChatTitle">💬 교사 채팅</div>
+  <div id="teacherFeedList"></div>
+  <div class="teacherChatComposer">
+   <input id="teacherChatInput" maxlength="40" placeholder="학생들에게 메시지 보내기">
+   <button id="teacherChatSend">보내기</button>
+  </div>
+ </div>
+
  <div id="teacherScoreBoard" class="scoreBoard floating"></div>
 </div>
 

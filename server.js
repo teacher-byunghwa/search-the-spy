@@ -95,15 +95,21 @@ function pushLobby(r){io.to(r.code).emit('lobby',lobby(r))}
 function pushState(r){io.to(r.code).emit('state',state(r))}
 function clearLoops(r){clearInterval(r.timer);clearInterval(r.npcTimer);clearTimeout(r.revealTimer)}
 
+const EXIT_PORTALS=[
+ {name:'왼쪽 출입구',x1:970,x2:1090},
+ {name:'가운데 출입구',x1:1950,x2:2070},
+ {name:'오른쪽 출입구',x1:2960,x2:3120}
+];
+
 function roomWalls(){
  const rects=[];
  const xs=[130,1110,2090],topY=90,bottomY=1510,w=820,h=360,t=18,door=100;
  for(const x of xs){
-  // top row, door gap in bottom wall
+  // 윗줄 교실: 복도 쪽(아래)에 문 하나
   rects.push({x,y:topY,w,h:t},{x,y:topY,w:t,h},{x:x+w-t,y:topY,w:t,h});
   const dg=x+w/2-door/2;
   rects.push({x,y:topY+h-t,w:dg-x,h:t},{x:dg+door,y:topY+h-t,w:x+w-(dg+door),h:t});
-  // bottom row, door gap in top wall
+  // 아랫줄 교실: 복도 쪽(위)에 문 하나
   rects.push({x,y:bottomY,w,h:t},{x,y:bottomY,w:t,h},{x:x+w-t,y:bottomY,w:t,h});
   const dg2=x+w/2-door/2;
   rects.push({x,y:bottomY,w:dg2-x,h:t},{x:dg2+door,y:bottomY,w:x+w-(dg2+door),h:t});
@@ -112,28 +118,47 @@ function roomWalls(){
 }
 const ROOM_WALLS=roomWalls();
 
-const OUTDOOR_SOLIDS=[
- {x:1050,y:40,w:370,h:270},{x:1780,y:40,w:370,h:270}
+// 운동장 학교 건물 외벽. 3개 출입구 부분만 실제로 비어 있음.
+const SCHOOL_YARD_WALLS=[
+ {x:650,y:40,w:320,h:300},
+ {x:1090,y:40,w:860,h:300},
+ {x:2070,y:40,w:890,h:300},
+ {x:3120,y:40,w:30,h:300}
 ];
+
+// 농구장 울타리: 점프 중에만 통과 가능. 그림과 완전히 같은 좌표 사용.
 const FENCE_RECTS=[
- {x:160,y:1120,w:920,h:14},{x:160,y:1820,w:920,h:14},{x:160,y:1120,w:14,h:714},{x:1066,y:1120,w:14,h:714}
+ {x:160,y:1120,w:920,h:14},
+ {x:160,y:1820,w:920,h:14},
+ {x:160,y:1120,w:14,h:714},
+ {x:1066,y:1120,w:14,h:714}
+];
+
+// 놀이터의 실제 단단한 구조물
+const PLAYGROUND_SOLIDS=[
+ {x:270,y:420,w:120,h:36},   // 미끄럼틀 바닥
+ {x:500,y:420,w:22,h:150},   // 그네 기둥
+ {x:760,y:420,w:22,h:150},   // 그네 기둥
+ {x:470,y:555,w:340,h:24}    // 모래놀이터 테두리 일부
 ];
 
 function rectContains(r,x,y,rad=18){return x+rad>r.x&&x-rad<r.x+r.w&&y+rad>r.y&&y-rad<r.y+r.h}
 function isBlocked(floor,x,y,jumping=false){
  if(x<28||x>MAP.w-28||y<28||y>MAP.h-28)return true;
- if(floor>0){
-   return ROOM_WALLS.some(r=>rectContains(r,x,y,17));
- }else{
-   if(OUTDOOR_SOLIDS.some(r=>rectContains(r,x,y,17)))return true;
-   if(!jumping&&FENCE_RECTS.some(r=>rectContains(r,x,y,17)))return true;
-   return false;
- }
+ if(floor>0)return ROOM_WALLS.some(r=>rectContains(r,x,y,17));
+ if(SCHOOL_YARD_WALLS.some(r=>rectContains(r,x,y,17)))return true;
+ if(PLAYGROUND_SOLIDS.some(r=>rectContains(r,x,y,17)))return true;
+ if(!jumping&&FENCE_RECTS.some(r=>rectContains(r,x,y,17)))return true;
+ return false;
 }
+
+// X/Y축을 따로 판정해 벽 모서리에 '붙잡히는' 현상을 줄인다.
 function safeMove(p,nx,ny){
  const jumping=Date.now()<(p.jumpUntil||0);
- if(!isBlocked(p.floor,nx,ny,jumping)){p.x=nx;p.y=ny;return true}
- return false;
+ let moved=false;
+ if(!isBlocked(p.floor,nx,p.y,jumping)){p.x=nx;moved=true}
+ if(!isBlocked(p.floor,p.x,ny,jumping)){p.y=ny;moved=true}
+ return moved;
 }
 
 function finish(r,winner,reason){
@@ -145,6 +170,17 @@ function finish(r,winner,reason){
  io.to(r.code).emit('scoreBoard',scores);
  pushState(r);
 }
+
+function forceFinish(r,reason='교사가 게임을 종료했습니다.'){
+ if(r.phase==='ended')return;
+ r.phase='ended';
+ clearLoops(r);
+ const scores=scoreBoard(r);
+ io.to(r.code).emit('gameForceEnded',{reason,scores});
+ io.to(r.code).emit('scoreBoard',scores);
+ pushState(r);
+}
+
 
 function startNpcConversation(a,b,now){
  a.activity='chat';b.activity='chat';a.pause=rand(2.2,5.0);b.pause=a.pause;
@@ -205,6 +241,7 @@ function prepareRound(r){
  });
  distributeNPCs(r);
  r.timeLeft=r.minutes*60;r.phase='reveal';r.lastTick=Date.now();
+ io.to(r.code).emit('clearFeed');r.warned30=false;
 
  for(const p of shuffled){
    const same=shuffled.filter(x=>x.role===p.role).map(x=>({id:x.id,nick:x.nick}));
@@ -229,6 +266,7 @@ function startRound(r){
   if(r.phase!=='playing')return;
   const now=Date.now(),dt=(now-r.lastTick)/1000;r.lastTick=now;
   r.timeLeft=Math.max(0,r.timeLeft-dt);
+  if(!r.warned30&&r.timeLeft<=30){r.warned30=true;io.to(r.code).emit('thirtySecondWarning',{text:'게임 30초 남았습니다!'});}
   if(r.timeLeft<=0){
     const alive=[...r.players.values()].filter(p=>p.role==='spy'&&p.alive).length;
     return finish(r,alive>0?'spy':'police',alive>0?'제한시간 동안 스파이가 살아남았습니다.':'모든 스파이가 검거되었습니다.');
@@ -288,7 +326,7 @@ io.on('connection',socket=>{
   spies=clamp(+spies||1,1,15);minutes=clamp(+minutes||5,1,20);
   const code=newCode();
   const r={code,spies,minutes,teacherId:socket.id,players:new Map(),npcs:[],phase:'lobby',
-   timeLeft:minutes*60,timer:null,npcTimer:null,revealTimer:null,lastTick:Date.now()};
+   timeLeft:minutes*60,timer:null,npcTimer:null,revealTimer:null,lastTick:Date.now(),warned30:false};
   rooms.set(code,r);socket.join(code);socket.data.room=code;socket.data.teacher=true;
   cb?.({ok:true,code});pushLobby(r);
  });
@@ -356,6 +394,14 @@ io.on('connection',socket=>{
   io.to(r.code).emit('playerJumped',{id:p.id,jumpStart:p.jumpStart,jumpUntil:p.jumpUntil});
  });
 
+ socket.on('teacherChat',({code,text})=>{
+  const r=rooms.get(String(code||''));
+  if(!r||socket.id!==r.teacherId)return;
+  text=String(text||'').trim().replace(/\s+/g,' ').slice(0,40);
+  if(!text)return;
+  io.to(r.code).emit('chatFeed',{kind:'teacher',nick:'교사',text});
+ });
+
  socket.on('playerChat',({text})=>{
   const r=rooms.get(socket.data.room),p=r?.players.get(socket.data.playerId);
   if(!r||!p||!['lobby','playing'].includes(r.phase))return;
@@ -407,6 +453,14 @@ io.on('connection',socket=>{
   if(!r||!p||r.phase!=='playing'||!p.alive||p.role!=='spy'||p.boostUsed||r.timeLeft>r.minutes*60/2)return;
   p.boostUsed=true;p.boostUntil=Date.now()+10000;p.bubble=choice(TAUNTS);p.bubbleUntil=p.boostUntil;
   io.to(r.code).emit('boosted',{id:p.id,until:p.boostUntil,text:p.bubble,bubbleUntil:p.bubbleUntil});
+ });
+
+ socket.on('forceEndGame',({code},cb)=>{
+  const r=rooms.get(String(code||''));
+  if(!r||socket.id!==r.teacherId)return cb?.({ok:false,error:'교사만 게임을 종료할 수 있습니다.'});
+  if(!['reveal','playing'].includes(r.phase))return cb?.({ok:false,error:'현재 종료할 게임이 없습니다.'});
+  forceFinish(r,'교사가 게임을 강제로 종료했습니다.');
+  cb?.({ok:true});
  });
 
  socket.on('requestNPCs',()=>{const r=rooms.get(socket.data.room);if(r)socket.emit('npcState',r.npcs)});

@@ -2,7 +2,7 @@ const socket=io();
 const MAP={w:3200,h:2000},SPEED=240;
 let mode=null,roomCode='',meId=null,myRole=null,teammates=[],players={},npcs=[],started=false,timeLeft=0,totalTime=1,currentPhase='lobby';
 let selectedTeacherFloor=1,keys={},angle=0,boostUntil=0,swingT=0,last=performance.now(),cam={x:0,y:0},joy={pointerId:null,dx:0,dy:0};
-let latestScores=[],pendingJoin=null,revealCountdown=null,feed=[],teacherZoom=1,localPortalCooldown=0;
+let latestScores=[],pendingJoin=null,revealCountdown=null,feed=[],teacherZoom=1,teacherPan={x:0,y:0},teacherDrag=null,localPortalCooldown=0;
 const $=id=>document.getElementById(id),gameCanvas=$('gameCanvas'),g=gameCanvas.getContext('2d'),teacherCanvas=$('teacherCanvas'),tg=teacherCanvas.getContext('2d');
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const SESSION_KEY='spySchoolStudentSessionV12';
@@ -31,7 +31,20 @@ function setTeacherGameVisible(on){$('teacherGame').style.display=on?'block':'no
 function myScore(){const p=players[meId];if(p&&Number.isFinite(p.score))return p.score;return latestScores.find(x=>x.id===meId)?.score||0}
 function renderScores(id){const el=$(id);if(!el)return;el.innerHTML=(latestScores||[]).map((p,i)=>`<div class="scoreRow"><span>${i+1}</span><b>${escapeHtml(p.nick)}</b><b>⭐ ${p.score}</b></div>`).join('')}
 function updateScoreUI(){$('scoreHud').textContent=`⭐ ${myScore()}`;renderScores('teacherScoreBoard');renderScores('lobbyScores');renderScores('endScores')}
-function addFeed(item){feed.push(item);if(feed.length>7)feed.shift();$('feedList').innerHTML=feed.map(x=>`<div class="feedItem ${x.kind}">${x.kind==='chat'?`<b>${escapeHtml(x.nick)}</b>: ${escapeHtml(x.text)}`:`☠ ${escapeHtml(x.nick)} · ${escapeHtml(x.text)}`}</div>`).join('')}
+function renderFeedLists(){
+ const html=feed.map(x=>{
+  if(x.kind==='chat')return `<div class="feedItem chat"><b>${escapeHtml(x.nick)}</b>: ${escapeHtml(x.text)}</div>`;
+  if(x.kind==='teacher')return `<div class="feedItem teacher">📣 <b>교사</b>: ${escapeHtml(x.text)}</div>`;
+  return `<div class="feedItem death">☠ ${escapeHtml(x.nick)} · ${escapeHtml(x.text)}</div>`;
+ }).join('');
+ $('feedList').innerHTML=html;
+ const tf=$('teacherFeedList');if(tf)tf.innerHTML=html;
+}
+function addFeed(item){
+ feed.push(item);
+ if(feed.length>8)feed.shift();
+ renderFeedLists();
+}
 
 function applyState(s){
  currentPhase=s.phase??currentPhase;timeLeft=s.timeLeft??timeLeft;totalTime=s.total??s.minutes*60??totalTime;
@@ -70,22 +83,50 @@ $('createRoom').onclick=()=>{mode='teacher';audioCtx();socket.emit('createRoom',
 $('joinRoom').onclick=()=>{audioCtx();const code=$('joinCode').value.trim(),nick=$('nickname').value.trim();if(!code||!nick){$('joinMessage').textContent='방 코드와 닉네임을 입력하세요.';return}pendingJoin={code,nick};$('characterModal').classList.add('open')};
 document.querySelectorAll('.characterChoice').forEach(b=>b.onclick=()=>{const gender=b.dataset.gender;$('characterModal').classList.remove('open');const{code,nick}=pendingJoin||{};if(!code||!nick)return;mode='student';socket.emit('joinRoom',{code,nick,gender},r=>{if(!r.ok){$('joinMessage').textContent=r.error;return}meId=r.id;roomCode=code;saveSession({code,playerId:r.id,reconnectToken:r.reconnectToken,nick});if(r.state)applyState(r.state);openPlayerWorld();updateScoreUI();toast('입장 완료! 친구들을 기다려 보세요.')})});
 $('cancelCharacter').onclick=()=>$('characterModal').classList.remove('open');
-$('startGame').onclick=()=>socket.emit('startGame',{code:roomCode},r=>{if(!r.ok)alert(r.error)});
-$('restartGameBtn').onclick=()=>socket.emit('restartGame',{code:roomCode},r=>{if(!r.ok)alert(r.error)});
+$('startGame').onclick=()=>{feed=[];renderFeedLists();socket.emit('startGame',{code:roomCode},r=>{if(!r.ok)alert(r.error)})};
+$('restartGameBtn').onclick=()=>{feed=[];renderFeedLists();socket.emit('restartGame',{code:roomCode},r=>{if(!r.ok)alert(r.error)})};
 $('copyJoinLink').onclick=async()=>{try{await navigator.clipboard.writeText(buildJoinUrl(roomCode));toast('참가 링크를 복사했어요!')}catch{prompt('복사하세요',buildJoinUrl(roomCode))}};
 function openQrModal(){$('qrModalImage').src=`/api/qr?room=${roomCode}`;$('qrModalUrl').textContent=buildJoinUrl(roomCode);$('qrModal').classList.add('open')}
-$('showQrInGame').onclick=openQrModal;$('endQrBtn').onclick=openQrModal;$('closeQrModal').onclick=()=>$('qrModal').classList.remove('open');
+$('showQrInGame').onclick=openQrModal;
+
+function sendTeacherChat(){
+ const input=$('teacherChatInput');
+ const text=String(input?.value||'').trim().slice(0,40);
+ if(!text)return;
+ socket.emit('teacherChat',{code:roomCode,text});
+ input.value='';
+}
+$('teacherChatSend').onclick=sendTeacherChat;
+$('teacherChatInput').addEventListener('keydown',e=>{
+ if(e.key==='Enter'){e.preventDefault();sendTeacherChat()}
+});
+
+
+$('forceEndGameBtn').onclick=()=>{
+ if(!confirm('현재 게임을 강제로 종료할까요?\n강제 종료 시 어느 팀에도 점수가 추가되지 않습니다.'))return;
+ socket.emit('forceEndGame',{code:roomCode},r=>{
+   if(!r?.ok)alert(r?.error||'게임 종료에 실패했습니다.');
+ });
+};
+$('endQrBtn').onclick=openQrModal;$('closeQrModal').onclick=()=>$('qrModal').classList.remove('open');
 
 socket.on('lobby',r=>{if(mode==='teacher'){$('joinCount').textContent=`참가 ${r.players.length}명`;$('joinList').innerHTML=r.players.map(p=>`<span class="chip">${escapeHtml(p.nick)}${p.connected?'':' (연결끊김)'}</span>`).join('')}});
 
 socket.on('scoreBoard',s=>{latestScores=s||[];(s||[]).forEach(x=>{if(players[x.id])players[x.id].score=x.score});updateScoreUI()});
 socket.on('state',applyState);
 socket.on('clock',c=>{timeLeft=c.timeLeft;totalTime=c.total});
+socket.on('thirtySecondWarning',e=>{toast('⏰ 게임 30초 남았습니다!');tone(860,.12,'square',.055);tone(660,.15,'square',.045,.12)});
 socket.on('playerMoved',p=>{const old=players[p.id]||{};players[p.id]={...old,...p,rx:old.rx??p.x,ry:old.ry??p.y}});
 socket.on('npcState',arr=>{npcs=arr.map(n=>{const old=npcs.find(x=>x.id===n.id)||{};return{...old,...n,rx:old.rx??n.x,ry:old.ry??n.y}})});
 socket.on('playerJumped',e=>{if(players[e.id]){players[e.id].jumpStart=e.jumpStart;players[e.id].jumpUntil=e.jumpUntil}});
 socket.on('playerBubble',e=>{if(players[e.id]){players[e.id].bubble=e.text;players[e.id].bubbleUntil=e.bubbleUntil}});
 socket.on('chatFeed',addFeed);
+
+socket.on('clearFeed',()=>{
+ feed=[];
+ renderFeedLists();
+});
+
 
 socket.on('role',r=>{applyRoleUI(r.role,r.teammates||[])});
 socket.on('teamRevealStarted',e=>{
@@ -102,6 +143,22 @@ socket.on('lifeReset',()=>{if(players[meId])players[meId].miss=0});
 socket.on('policeOut',e=>{if(players[e.id]){players[e.id].alive=false;players[e.id].ghost=true}});
 socket.on('boosted',e=>{if(players[e.id]){players[e.id].boostUntil=e.until;players[e.id].boostUsed=true;players[e.id].bubble=e.text;players[e.id].bubbleUntil=e.bubbleUntil}if(e.id===meId){boostUntil=e.until;toast('🚀 부스터 10초!')}});
 socket.on('gameEnded',e=>showEnd(e));
+
+socket.on('gameForceEnded',e=>{
+ started=false;currentPhase='ended';
+ setPlayerGameVisible(false);setTeacherGameVisible(false);
+ if(e?.scores){
+   latestScores=e.scores;
+   e.scores.forEach(s=>{if(players[s.id])players[s.id].score=s.score});
+ }
+ $('endTitle').textContent='⛔ 게임 종료';
+ $('endText').textContent=e?.reason||'교사가 게임을 종료했습니다.';
+ $('myEndScore').textContent=mode==='student'?`내 누적 점수: ⭐ ${myScore()}점`:'';
+ $('teacherEndActions').style.display=mode==='teacher'?'flex':'none';
+ $('studentEndWait').style.display=mode==='student'?'block':'none';
+ updateScoreUI();showScreen('endScreen',true);sceneSound('end');
+});
+
 socket.on('roomClosed',()=>{alert('교사가 방을 종료했습니다.');clearSession();location.reload()});
 
 function showEnd(e){
@@ -143,6 +200,11 @@ addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
 })();
 
 function jumpOffset(o){const now=Date.now(),s=o?.jumpStart||0,e=o?.jumpUntil||0;if(now<s||now>e||e<=s)return 0;return Math.sin(Math.PI*((now-s)/(e-s)))*40}
+const EXIT_PORTALS=[
+ {name:'왼쪽 출입구',x1:970,x2:1090},
+ {name:'가운데 출입구',x1:1950,x2:2070},
+ {name:'오른쪽 출입구',x1:2960,x2:3120}
+];
 const ROOM_WALLS=(()=>{
  const a=[],xs=[130,1110,2090],topY=90,bottomY=1510,w=820,h=360,t=18,door=100;
  for(const x of xs){
@@ -152,30 +214,51 @@ const ROOM_WALLS=(()=>{
   dg=x+w/2-door/2;a.push({x,y:bottomY,w:dg-x,h:t},{x:dg+door,y:bottomY,w:x+w-(dg+door),h:t});
  }return a;
 })();
-const OUTDOOR_SOLIDS=[{x:1050,y:40,w:370,h:270},{x:1780,y:40,w:370,h:270}];
-const FENCES=[{x:160,y:1120,w:920,h:14},{x:160,y:1820,w:920,h:14},{x:160,y:1120,w:14,h:714},{x:1066,y:1120,w:14,h:714}];
+const SCHOOL_YARD_WALLS=[
+ {x:650,y:40,w:320,h:300},
+ {x:1090,y:40,w:860,h:300},
+ {x:2070,y:40,w:890,h:300},
+ {x:3120,y:40,w:30,h:300}
+];
+const FENCES=[
+ {x:160,y:1120,w:920,h:14},{x:160,y:1820,w:920,h:14},
+ {x:160,y:1120,w:14,h:714},{x:1066,y:1120,w:14,h:714}
+];
+const PLAYGROUND_SOLIDS=[
+ {x:270,y:420,w:120,h:36},{x:500,y:420,w:22,h:150},
+ {x:760,y:420,w:22,h:150},{x:470,y:555,w:340,h:24}
+];
 function hitRect(r,x,y,rad=18){return x+rad>r.x&&x-rad<r.x+r.w&&y+rad>r.y&&y-rad<r.y+r.h}
-function canMoveLocal(p,nx,ny){
- if(nx<28||nx>MAP.w-28||ny<28||ny>MAP.h-28)return false;
+function blockedLocal(p,x,y){
+ if(x<28||x>MAP.w-28||y<28||y>MAP.h-28)return true;
  const jumping=Date.now()<(p.jumpUntil||0);
- if(p.floor>0)return !ROOM_WALLS.some(r=>hitRect(r,nx,ny));
- if(OUTDOOR_SOLIDS.some(r=>hitRect(r,nx,ny)))return false;
- if(!jumping&&FENCES.some(r=>hitRect(r,nx,ny)))return false;
- return true;
+ if(p.floor>0)return ROOM_WALLS.some(r=>hitRect(r,x,y,17));
+ if(SCHOOL_YARD_WALLS.some(r=>hitRect(r,x,y,17)))return true;
+ if(PLAYGROUND_SOLIDS.some(r=>hitRect(r,x,y,17)))return true;
+ if(!jumping&&FENCES.some(r=>hitRect(r,x,y,17)))return true;
+ return false;
 }
+function resolveMoveLocal(p,nx,ny){
+ // 축별로 처리: 모서리를 비스듬히 만났을 때 선에 갇히지 않고 벽을 따라 미끄러진다.
+ if(!blockedLocal(p,nx,p.y))p.x=nx;
+ if(!blockedLocal(p,p.x,ny))p.y=ny;
+}
+function entranceAtX(x){return EXIT_PORTALS.find(e=>x>=e.x1&&x<=e.x2)}
 function checkPortalLocal(p){
  if(currentPhase!=='playing'||Date.now()<localPortalCooldown)return;
- // compact stairs
  const left=p.x>=135&&p.x<=225,right=p.x>=2975&&p.x<=3065;
  if(p.floor>0&&(left||right)){
   const side=left?'left':'right';
   if(p.y>=675&&p.y<=709&&p.floor<3){p.floor++;p.x=side==='left'?315:MAP.w-315;p.y=795;transitionLocal(p,`${p.floor}층`);return}
   if(p.y>=780&&p.y<=814&&p.floor>1){p.floor--;p.x=side==='left'?315:MAP.w-315;p.y=690;transitionLocal(p,`${p.floor}층`);return}
  }
- if(p.floor===1&&p.x>=1450&&p.x<=1750&&p.y>=1920){p.floor=0;p.x=1600;p.y=350;transitionLocal(p,'운동장');return}
- if(p.floor===0&&p.x>=1450&&p.x<=1750&&p.y<=180){p.floor=1;p.x=1600;p.y=1860;transitionLocal(p,'1층');}
+ // 1층 남쪽 복도 -> 운동장 3개 출입구
+ const gate=entranceAtX(p.x);
+ if(p.floor===1&&gate&&p.y>=1940){p.floor=0;p.y=370;transitionLocal(p,`운동장 · ${gate.name}`);return}
+ // 운동장 학교 외벽의 3개 문 -> 1층 남쪽 복도
+ if(p.floor===0&&gate&&p.y<=340){p.floor=1;p.y=1910;transitionLocal(p,`1층 · ${gate.name}`);return}
 }
-function transitionLocal(p,label){localPortalCooldown=Date.now()+700;sceneSound('floor');toast(`📍 ${label}`);socket.emit('portalTransition',{floor:p.floor,x:p.x,y:p.y,label})}
+function transitionLocal(p,label){localPortalCooldown=Date.now()+550;sceneSound('floor');toast(`📍 ${label}`);socket.emit('portalTransition',{floor:p.floor,x:p.x,y:p.y,label})}
 
 function lerpEntities(dt){
  const f=Math.min(1,dt*14);
@@ -261,38 +344,89 @@ function drawClassroom(ctx,x,y,w,h,label,doorSide){
 }
 function drawSchool(ctx,floor){
  const bg=ctx.createLinearGradient(0,0,0,MAP.h);bg.addColorStop(0,'#eef7f9');bg.addColorStop(1,'#d8e3dd');ctx.fillStyle=bg;ctx.fillRect(0,0,MAP.w,MAP.h);
- ctx.fillStyle='#b8cbd5';ctx.fillRect(0,560,MAP.w,780);ctx.fillStyle='#98b2bf';ctx.fillRect(0,900,MAP.w,75);
- for(let y=580;y<1340;y+=60)for(let x=0;x<MAP.w;x+=90){ctx.strokeStyle='rgba(255,255,255,.22)';ctx.strokeRect(x,y,90,60)}
+ // 중앙 복도
+ ctx.fillStyle='#b8cbd5';ctx.fillRect(0,520,MAP.w,900);
+ for(let y=540;y<1420;y+=60)for(let x=0;x<MAP.w;x+=90){ctx.strokeStyle='rgba(255,255,255,.24)';ctx.strokeRect(x,y,90,60)}
  const labels={1:['1-1 교실','1-2 교실','행정실','급식실','도서관','보건실'],2:['2-1 교실','컴퓨터실','과학실','영어실','미술실','교무실'],3:['3-1 교실','방송실','음악실','회의실','상담실','자료실']}[floor];
- const xs=[130,1110,2090];let i=0;for(const x of xs){drawClassroom(ctx,x,90,820,360,labels[i++],'bottom')}for(const x of xs){drawClassroom(ctx,x,1510,820,360,labels[i++],'top')}
- // lockers, plants, benches
+ const xs=[130,1110,2090];let i=0;
+ for(const x of xs)drawClassroom(ctx,x,90,820,360,labels[i++],'bottom');
+ for(const x of xs)drawClassroom(ctx,x,1510,820,360,labels[i++],'top');
+
+ // 아랫줄 교실 뒤쪽에 출구 전용 가로 복도 + 세로 연결 통로를 명확하게 표시
+ if(floor===1){
+  ctx.fillStyle='#d6e2e7';ctx.fillRect(0,1875,MAP.w,125);
+  ctx.fillStyle='#c3d4dc';
+  for(const gate of EXIT_PORTALS){ctx.fillRect(gate.x1,1320,gate.x2-gate.x1,680)}
+  ctx.strokeStyle='#8ca5b0';ctx.lineWidth=3;ctx.setLineDash([18,10]);ctx.beginPath();ctx.moveTo(0,1880);ctx.lineTo(MAP.w,1880);ctx.stroke();ctx.setLineDash([]);
+  for(const gate of EXIT_PORTALS){
+   const w=gate.x2-gate.x1;rounded(ctx,gate.x1,1910,w,80,12,'#315b75','#203f53');
+   ctx.fillStyle='#dff3fb';ctx.fillRect(gate.x1+12,1925,w-24,48);
+   ctx.fillStyle='#173b4d';ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.fillText(gate.name,gate.x1+w/2,1900);ctx.textAlign='left';
+  }
+  ctx.fillStyle='#47636d';ctx.font='bold 22px sans-serif';ctx.fillText('출입구 연결 복도',1400,1945);
+ }
+
+ // 사물함/알림판/벤치
  for(let i=0;i<14;i++){ctx.fillStyle=i%2?'#91b7c8':'#80a5b6';ctx.fillRect(560+i*32,650,29,78);ctx.strokeStyle='#52707c';ctx.strokeRect(560+i*32,650,29,78)}
  rounded(ctx,1200,635,800,105,12,'#f7e3a0','#a98d48');ctx.fillStyle='#654';ctx.font='bold 22px sans-serif';ctx.fillText('🏫 오늘도 즐겁고 안전한 학교생활!',1390,695);
  rounded(ctx,950,1225,330,34,7,'#9f7046','#6e4a2f');rounded(ctx,1940,1225,330,34,7,'#9f7046','#6e4a2f');
- // compact stair towers
- for(const x of [120,MAP.w-260]){ctx.fillStyle='rgba(0,0,0,.2)';rounded(ctx,x+9,645,140,230,15,'rgba(0,0,0,.18)');rounded(ctx,x,630,140,230,15,'#3a596c','#233b49');rounded(ctx,x+25,675,90,34,8,floor<3?'#5f8fa7':'#455863','#d7edf7');rounded(ctx,x+25,780,90,34,8,floor>1?'#775f7b':'#4e4750','#eaddeb');ctx.fillStyle='#fff';ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.fillText(floor<3?'▲ 위층':'막힘',x+70,698);ctx.fillText(floor>1?'▼ 아래층':'막힘',x+70,803);ctx.textAlign='left'}
- if(floor===1){ctx.fillStyle='#315b75';ctx.fillRect(1450,1880,300,100);ctx.fillStyle='#d9eff8';ctx.fillRect(1490,1900,110,70);ctx.fillRect(1600,1900,110,70);ctx.fillStyle='#fff';ctx.font='bold 20px sans-serif';ctx.fillText('정문 → 운동장',1520,1870)}
+
+ // 계단
+ for(const x of [120,MAP.w-260]){rounded(ctx,x+9,645,140,230,15,'rgba(0,0,0,.18)');rounded(ctx,x,630,140,230,15,'#3a596c','#233b49');rounded(ctx,x+25,675,90,34,8,floor<3?'#5f8fa7':'#455863','#d7edf7');rounded(ctx,x+25,780,90,34,8,floor>1?'#775f7b':'#4e4750','#eaddeb');ctx.fillStyle='#fff';ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.fillText(floor<3?'▲ 위층':'막힘',x+70,698);ctx.fillText(floor>1?'▼ 아래층':'막힘',x+70,803);ctx.textAlign='left'}
  ctx.fillStyle='#415b60';ctx.font='bold 36px sans-serif';ctx.fillText(`${floor}층 중앙 복도`,1400,945);
 }
-function drawFence(ctx,r){ctx.strokeStyle='#d8dee2';ctx.lineWidth=5;ctx.setLineDash([12,7]);ctx.strokeRect(r.x,r.y,r.w,r.h);ctx.setLineDash([]);ctx.fillStyle='#72808a';for(let x=r.x;x<r.x+r.w;x+=55)ctx.fillRect(x-2,r.y-8,4,24)}
-function drawYard(ctx){
- const sky=ctx.createLinearGradient(0,0,0,MAP.h);sky.addColorStop(0,'#ccebf7');sky.addColorStop(.25,'#e9f5e7');sky.addColorStop(.26,'#78ad65');sky.addColorStop(1,'#5e984c');ctx.fillStyle=sky;ctx.fillRect(0,0,MAP.w,MAP.h);
- // 2.5D school facade at top
- ctx.fillStyle='rgba(0,0,0,.2)';ctx.fillRect(1030,70,1140,280);ctx.fillStyle='#f1e3c8';ctx.fillRect(1000,35,1140,280);ctx.fillStyle='#a95247';ctx.fillRect(960,15,1220,48);
- for(let r=0;r<3;r++)for(let c=0;c<10;c++){ctx.fillStyle='#9fd1e5';ctx.fillRect(1040+c*100,85+r*64,66,44);ctx.fillStyle='#fff8';ctx.fillRect(1046+c*100,90+r*64,12,34)}
- rounded(ctx,1450,95,300,90,14,'#315b75','#23445a');ctx.fillStyle='#fff';ctx.font='bold 22px sans-serif';ctx.fillText('학교 안으로',1535,147);
- // wide track / field
- ctx.fillStyle='#b96d54';ctx.beginPath();ctx.ellipse(2050,1150,930,520,0,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#f4e8df';ctx.lineWidth=8;for(let i=0;i<4;i++){ctx.beginPath();ctx.ellipse(2050,1150,865-i*55,455-i*38,0,0,Math.PI*2);ctx.stroke()}
- ctx.fillStyle='#70a85d';ctx.beginPath();ctx.ellipse(2050,1150,610,305,0,0,Math.PI*2);ctx.fill();
- ctx.strokeStyle='#fff';ctx.lineWidth=8;ctx.strokeRect(1640,980,100,150);ctx.strokeRect(2380,980,100,150);
- // fenced basketball court - must jump over fence
- ctx.fillStyle='#c9a86a';ctx.fillRect(160,1120,920,714);ctx.strokeStyle='#fff';ctx.lineWidth=6;ctx.strokeRect(180,1140,880,674);ctx.beginPath();ctx.arc(620,1477,120,0,Math.PI*2);ctx.stroke();
- drawFence(ctx,{x:160,y:1120,w:920,h:714});
- // trees/benches
- for(let i=0;i<10;i++){const x=150+i*310;ctx.fillStyle='#7d5637';ctx.fillRect(x,420,24,82);ctx.fillStyle='#397f48';ctx.beginPath();ctx.arc(x+12,392,60,0,Math.PI*2);ctx.fill()}
- rounded(ctx,210,650,330,36,7,'#956b42','#694a30');rounded(ctx,600,650,330,36,7,'#956b42','#694a30');
- ctx.fillStyle='#fff';ctx.font='bold 40px sans-serif';ctx.fillText('운동장',1500,500);
+
+function drawFenceRect(ctx,r){
+ // 충돌 좌표와 같은 두께의 실제 울타리 표현
+ ctx.fillStyle='#6e7e87';ctx.fillRect(r.x,r.y,r.w,r.h);
+ ctx.fillStyle='#dfe7eb';
+ if(r.w>r.h){for(let x=r.x;x<r.x+r.w;x+=48)ctx.fillRect(x,r.y-8,5,r.h+16)}
+ else{for(let y=r.y;y<r.y+r.h;y+=48)ctx.fillRect(r.x-8,y,r.w+16,5)}
 }
+function drawGoal(ctx,x,y,flip=1){
+ ctx.save();ctx.translate(x,y);ctx.scale(flip,1);ctx.strokeStyle='#fff';ctx.lineWidth=9;ctx.strokeRect(0,0,120,160);ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=2;for(let i=20;i<120;i+=20){ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i,160);ctx.stroke()}for(let j=20;j<160;j+=20){ctx.beginPath();ctx.moveTo(0,j);ctx.lineTo(120,j);ctx.stroke()}ctx.restore();
+}
+function drawPlayground(ctx){
+ // 놀이터 바닥
+ rounded(ctx,150,330,780,360,24,'#e7c88b','#b5965e');
+ ctx.fillStyle='#5c8eb5';ctx.font='bold 24px sans-serif';ctx.fillText('놀이터',180,370);
+ // 미끄럼틀
+ ctx.fillStyle='#e85f55';ctx.fillRect(270,420,120,36);ctx.strokeStyle='#3978a1';ctx.lineWidth=10;ctx.beginPath();ctx.moveTo(300,420);ctx.lineTo(235,545);ctx.stroke();ctx.fillStyle='#ffd34d';ctx.fillRect(285,380,90,45);
+ // 그네
+ ctx.strokeStyle='#3e6f8a';ctx.lineWidth=12;ctx.beginPath();ctx.moveTo(500,570);ctx.lineTo(535,390);ctx.lineTo(745,390);ctx.lineTo(780,570);ctx.stroke();ctx.strokeStyle='#444';ctx.lineWidth=4;for(const sx of [590,690]){ctx.beginPath();ctx.moveTo(sx,400);ctx.lineTo(sx,510);ctx.moveTo(sx+35,400);ctx.lineTo(sx+35,510);ctx.stroke();ctx.fillStyle='#d65b55';ctx.fillRect(sx-4,505,44,13)}
+ // 모래놀이 영역 테두리
+ ctx.strokeStyle='#9a7d50';ctx.lineWidth=10;ctx.strokeRect(470,555,340,24);
+}
+function drawYard(ctx){
+ const sky=ctx.createLinearGradient(0,0,0,MAP.h);sky.addColorStop(0,'#ccebf7');sky.addColorStop(.22,'#e9f5e7');sky.addColorStop(.23,'#78ad65');sky.addColorStop(1,'#5e984c');ctx.fillStyle=sky;ctx.fillRect(0,0,MAP.w,MAP.h);
+
+ // 학교 외벽: 실제 충돌 구간을 그대로 그림. 세 곳만 문으로 비어 있음.
+ ctx.fillStyle='rgba(0,0,0,.18)';ctx.fillRect(650,55,2500,300);
+ for(const r of SCHOOL_YARD_WALLS){ctx.fillStyle='#f1e3c8';ctx.fillRect(r.x,r.y,r.w,r.h);ctx.fillStyle='#a95247';ctx.fillRect(r.x,r.y,r.w,38)}
+ for(const gate of EXIT_PORTALS){
+  const w=gate.x2-gate.x1;rounded(ctx,gate.x1,245,w,95,12,'#315b75','#23445a');ctx.fillStyle='#dff3fb';ctx.fillRect(gate.x1+12,260,w-24,62);ctx.fillStyle='#173b4d';ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.fillText(gate.name,gate.x1+w/2,235);ctx.textAlign='left';
+ }
+ ctx.fillStyle='#fff';ctx.font='bold 25px sans-serif';ctx.fillText('우리 학교',1520,82);
+
+ drawPlayground(ctx);
+
+ // 넓은 육상 트랙/축구장
+ ctx.fillStyle='#b96d54';ctx.beginPath();ctx.ellipse(2140,1180,900,500,0,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#f4e8df';ctx.lineWidth=8;for(let i=0;i<4;i++){ctx.beginPath();ctx.ellipse(2140,1180,840-i*52,440-i*36,0,0,Math.PI*2);ctx.stroke()}
+ ctx.fillStyle='#70a85d';ctx.beginPath();ctx.ellipse(2140,1180,590,300,0,0,Math.PI*2);ctx.fill();
+ ctx.strokeStyle='#fff';ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(2140,880);ctx.lineTo(2140,1480);ctx.stroke();ctx.beginPath();ctx.arc(2140,1180,85,0,Math.PI*2);ctx.stroke();
+ drawGoal(ctx,1580,1090,1);drawGoal(ctx,2700,1090,-1);
+
+ // 농구장: 울타리는 점프로만 넘을 수 있음
+ ctx.fillStyle='#c9a86a';ctx.fillRect(160,1120,920,714);ctx.strokeStyle='#fff';ctx.lineWidth=6;ctx.strokeRect(185,1145,870,664);ctx.beginPath();ctx.arc(620,1477,120,0,Math.PI*2);ctx.stroke();
+ for(const r of FENCES)drawFenceRect(ctx,r);
+ ctx.fillStyle='#fff';ctx.font='bold 22px sans-serif';ctx.fillText('농구장 · 울타리는 점프로 넘을 수 있어요',250,1090);
+
+ // 나무와 벤치
+ for(let i=0;i<9;i++){const x=180+i*340;ctx.fillStyle='#7d5637';ctx.fillRect(x,760,24,82);ctx.fillStyle='#397f48';ctx.beginPath();ctx.arc(x+12,730,58,0,Math.PI*2);ctx.fill()}
+ rounded(ctx,180,900,330,36,7,'#956b42','#694a30');rounded(ctx,560,900,330,36,7,'#956b42','#694a30');
+ ctx.fillStyle='#fff';ctx.font='bold 40px sans-serif';ctx.fillText('운동장',1440,570);
+}
+
 function drawArea(ctx,floor){floor===0?drawYard(ctx):drawSchool(ctx,floor)}
 
 function loop(t){
@@ -305,7 +439,7 @@ function loop(t){
    const l=Math.hypot(dx,dy);dx/=l;dy/=l;angle=Math.atan2(dy,dx);
    const sp=(Date.now()<(p.boostUntil||boostUntil)?1.8:1)*SPEED;
    const nx=clamp(p.x+dx*sp*dt,20,MAP.w-20),ny=clamp(p.y+dy*sp*dt,20,MAP.h-20);
-   if(canMoveLocal(p,nx,ny)){p.x=nx;p.y=ny}p.angle=angle;checkPortalLocal(p);socket.emit('move',{x:p.x,y:p.y,angle:p.angle,floor:p.floor});
+   resolveMoveLocal(p,nx,ny);p.angle=angle;checkPortalLocal(p);socket.emit('move',{x:p.x,y:p.y,angle:p.angle,floor:p.floor});
   }
   if(swingT>0)swingT-=dt;drawPlayerView();
  }
@@ -350,8 +484,8 @@ function drawTeacherRoleTag(ctx,p){
 
 function drawTeacherView(){
  tg.clearRect(0,0,teacherCanvas.width,teacherCanvas.height);
- const scale=Math.min(teacherCanvas.width/MAP.w,teacherCanvas.height/MAP.h)*.90;
- const ox=teacherCanvas.width/2-MAP.w*scale/2,oy=teacherCanvas.height/2-MAP.h*scale/2;
+ const fit=Math.min(teacherCanvas.width/MAP.w,teacherCanvas.height/MAP.h)*.90,scale=fit*teacherZoom;
+ const ox=teacherCanvas.width/2-MAP.w*scale/2+teacherPan.x,oy=teacherCanvas.height/2-MAP.h*scale/2+teacherPan.y;
  tg.save();tg.translate(ox,oy);tg.scale(scale,scale);drawArea(tg,selectedTeacherFloor);
  for(const n of npcs.filter(n=>n.floor===selectedTeacherFloor))drawPerson(tg,n);
  for(const p of Object.values(players).filter(p=>p.floor===selectedTeacherFloor)){
@@ -364,7 +498,13 @@ function drawTeacherView(){
 
 }
 
-document.querySelectorAll('#floorTabs button').forEach(b=>b.onclick=()=>{selectedTeacherFloor=+b.dataset.floor;sceneSound('floor')});
+document.querySelectorAll('#floorTabs button').forEach(b=>b.onclick=()=>{selectedTeacherFloor=+b.dataset.floor;teacherPan={x:0,y:0};sceneSound('floor')});
+// 버튼 없이 마우스 휠로 확대/축소, 드래그로 이동
+teacherCanvas.addEventListener('wheel',e=>{if(mode!=='teacher')return;e.preventDefault();teacherZoom=clamp(teacherZoom*(e.deltaY<0?1.12:.89),.7,3.2)},{passive:false});
+teacherCanvas.addEventListener('pointerdown',e=>{if(mode!=='teacher')return;teacherDrag={id:e.pointerId,x:e.clientX,y:e.clientY,px:teacherPan.x,py:teacherPan.y};teacherCanvas.setPointerCapture(e.pointerId)});
+teacherCanvas.addEventListener('pointermove',e=>{if(!teacherDrag||e.pointerId!==teacherDrag.id)return;teacherPan.x=teacherDrag.px+(e.clientX-teacherDrag.x);teacherPan.y=teacherDrag.py+(e.clientY-teacherDrag.y)});
+teacherCanvas.addEventListener('pointerup',e=>{if(teacherDrag&&e.pointerId===teacherDrag.id)teacherDrag=null});
+teacherCanvas.addEventListener('pointercancel',()=>teacherDrag=null);
 
 
 
