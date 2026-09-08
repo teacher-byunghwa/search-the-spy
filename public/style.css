@@ -36,7 +36,7 @@ button,input{font:inherit}button{cursor:pointer}
 .modal{display:none;position:fixed;inset:0;z-index:100;align-items:center;justify-content:center;background:rgba(4,12,18,.78);padding:18px}.modal.open{display:flex}.modalCard{position:relative;width:min(620px,94vw);background:#fff7e7;color:#222;padding:25px;border-radius:20px}.characterChoices{display:flex;gap:18px;justify-content:center}.characterChoice{width:44%;padding:18px;border:3px solid transparent;border-radius:14px;background:#e8f2f8}.avatarPreview{font-size:76px}.secondary{background:#6f7478!important;color:#fff!important}
 #teamRevealOverlay{display:none;position:fixed;inset:0;z-index:130;align-items:center;justify-content:center;background:rgba(5,14,22,.86)}#teamRevealOverlay.open{display:flex}.teamRevealCard{width:min(700px,92vw);background:#fff7e7;color:#182631;border-radius:24px;padding:34px;text-align:center;box-shadow:0 30px 90px #0009}.teamRevealCard h1{font-size:38px;margin:10px}.revealTop{font-size:16px;color:#64737c}.teamMember{display:inline-block;margin:5px;padding:10px 14px;border-radius:999px;background:#e5eff4;font-weight:900}.revealTimer{margin-top:20px;font-size:18px}.revealTimer span{font-size:42px;font-weight:900;color:#1b7ca2}
 #goOverlay{display:none;position:fixed;inset:0;z-index:140;align-items:center;justify-content:center;background:rgba(8,25,35,.58)}#goOverlay.open{display:flex}#goOverlay div{font-size:76px;font-weight:1000;color:#fff;text-shadow:0 8px 30px #000;animation:goPop .8s ease}@keyframes goPop{0%{transform:scale(.3);opacity:0}55%{transform:scale(1.15);opacity:1}100%{transform:scale(1)}}
-#teacherTools{position:fixed;left:50%;top:68px;transform:translateX(-50%);z-index:30;display:flex;gap:5px;align-items:center;background:rgba(0,0,0,.65);padding:6px;border-radius:11px}#teacherTools button{border:0;border-radius:8px;background:#fff;color:#222;font-weight:900;padding:7px 11px}#zoomLabel{min-width:58px;text-align:center;font-weight:900}
+
 .teacherAction{pointer-events:auto;padding:9px 13px;border:0;border-radius:10px;background:#fff;color:#222;font-weight:900}
 #floorTabs{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:25;display:flex;gap:8px}#floorTabs button{padding:10px 16px;border:0;border-radius:9px;background:#222;color:#fff;font-weight:800}#teacherLegend{position:fixed;left:12px;bottom:12px;background:rgba(0,0,0,.68);padding:9px 12px;border-radius:10px;z-index:20}
 .scoreBoard{background:#fff;border:1px solid #ddd;border-radius:12px;padding:10px;color:#222;max-height:230px;overflow:auto;text-align:left}.scoreRow{display:grid;grid-template-columns:32px 1fr 80px;gap:6px;padding:6px;border-bottom:1px solid #eee}.scoreBoard.compact{max-height:120px}.scoreBoard.floating{position:fixed;right:12px;top:110px;z-index:21;width:250px;background:rgba(255,255,255,.94)}
@@ -51,4 +51,60 @@ button,input{font:inherit}button{cursor:pointer}
  #chatPanel{left:150px;bottom:18px}#chatMenu{width:215px}.roundBtn{width:78px;height:78px}#attackBtn{right:12px;bottom:18px}#jumpBtn{right:12px;bottom:105px}#boostBtn{right:98px;bottom:18px}
  .scoreBoard.floating{width:190px;top:145px;font-size:12px}.teamRevealCard h1{font-size:32px}#goOverlay div{font-size:52px}
  #lobbyNotice{top:92px;max-width:72vw;font-size:12px;text-align:center}
+}
+
+/* v13 teacher lobby polish */
+.teacherLobbyShell{
+  display:flex;align-items:center;justify-content:center;gap:28px;
+  width:min(1120px,95vw);padding:24px
+}
+.lobbyDecor{
+  position:relative;width:300px;height:390px;display:flex;align-items:center;justify-content:center
+}
+.lobbySpy{
+  font-size:150px;filter:drop-shadow(0 22px 24px rgba(0,0,0,.35));
+  animation:lobbyFloat 2.4s ease-in-out infinite
+}
+@keyframes lobbyFloat{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-12px) rotate(2deg)}}
+.lobbyBubble{
+  position:absolute;top:42px;right:-20px;background:#fff;color:#24343d;
+  padding:13px 16px;border-radius:18px;font-weight:900;box-shadow:0 12px 30px rgba(0,0,0,.25)
+}
+.lobbyBubble:after{
+  content:"";position:absolute;left:-14px;bottom:18px;border:9px solid transparent;border-right-color:#fff
+}
+.miniFootprints{
+  position:absolute;bottom:52px;left:70px;color:#9bd1e7;font-size:18px;letter-spacing:8px;
+  transform:rotate(-15deg);opacity:.85
+}
+.modernLobby{width:min(760px,94vw);padding:30px}
+.funQrWrap{
+  background:linear-gradient(135deg,#ffffff,#eef9fc);
+  border:2px dashed #9ecddd;box-shadow:0 10px 30px rgba(34,94,119,.12)
+}
+.qrSide{min-width:220px}
+.cuteCopyBtn{
+  border:none!important;border-radius:999px!important;
+  background:linear-gradient(135deg,#49b3d2,#577fd5)!important;
+  color:#fff!important;font-weight:900!important;padding:11px 16px!important;
+  box-shadow:0 8px 18px rgba(63,129,176,.28);
+  transition:transform .15s ease,box-shadow .15s ease
+}
+.cuteCopyBtn:hover{transform:translateY(-2px);box-shadow:0 11px 22px rgba(63,129,176,.35)}
+.lobbyInfoRow{
+  display:flex;justify-content:space-between;gap:12px;align-items:center;margin:12px 0 6px
+}
+.joinCounter{
+  display:inline-flex;align-items:center;gap:7px;background:#e7f4f8;color:#28576a;
+  padding:9px 13px;border-radius:999px;font-weight:900
+}
+.readyHint{font-size:12px;color:#71848c}
+@media(max-width:860px){
+  .teacherLobbyShell{display:block}.lobbyDecor{display:none}.modernLobby{margin:auto}
+  .lobbyInfoRow{flex-direction:column;align-items:flex-start}
+}
+
+/* teacher role labels */
+.teacherRoleBadge{
+  display:inline-block;padding:3px 7px;border-radius:999px;color:#fff;font-size:11px;font-weight:900
 }

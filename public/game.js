@@ -2,7 +2,7 @@ const socket=io();
 const MAP={w:3200,h:2000},SPEED=240;
 let mode=null,roomCode='',meId=null,myRole=null,teammates=[],players={},npcs=[],started=false,timeLeft=0,totalTime=1,currentPhase='lobby';
 let selectedTeacherFloor=1,keys={},angle=0,boostUntil=0,swingT=0,last=performance.now(),cam={x:0,y:0},joy={pointerId:null,dx:0,dy:0};
-let latestScores=[],pendingJoin=null,revealCountdown=null,feed=[],teacherZoom=1,teacherPan={x:0,y:0},dragState=null,localPortalCooldown=0;
+let latestScores=[],pendingJoin=null,revealCountdown=null,feed=[],teacherZoom=1,localPortalCooldown=0;
 const $=id=>document.getElementById(id),gameCanvas=$('gameCanvas'),g=gameCanvas.getContext('2d'),teacherCanvas=$('teacherCanvas'),tg=teacherCanvas.getContext('2d');
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const SESSION_KEY='spySchoolStudentSessionV12';
@@ -72,7 +72,7 @@ document.querySelectorAll('.characterChoice').forEach(b=>b.onclick=()=>{const ge
 $('cancelCharacter').onclick=()=>$('characterModal').classList.remove('open');
 $('startGame').onclick=()=>socket.emit('startGame',{code:roomCode},r=>{if(!r.ok)alert(r.error)});
 $('restartGameBtn').onclick=()=>socket.emit('restartGame',{code:roomCode},r=>{if(!r.ok)alert(r.error)});
-$('copyJoinLink').onclick=async()=>{try{await navigator.clipboard.writeText(buildJoinUrl(roomCode));toast('링크 복사 완료')}catch{prompt('복사하세요',buildJoinUrl(roomCode))}};
+$('copyJoinLink').onclick=async()=>{try{await navigator.clipboard.writeText(buildJoinUrl(roomCode));toast('참가 링크를 복사했어요!')}catch{prompt('복사하세요',buildJoinUrl(roomCode))}};
 function openQrModal(){$('qrModalImage').src=`/api/qr?room=${roomCode}`;$('qrModalUrl').textContent=buildJoinUrl(roomCode);$('qrModal').classList.add('open')}
 $('showQrInGame').onclick=openQrModal;$('endQrBtn').onclick=openQrModal;$('closeQrModal').onclick=()=>$('qrModal').classList.remove('open');
 
@@ -205,17 +205,59 @@ function drawPerson(ctx,o,opt={}){
 function bubble(ctx,o){if(!o?.bubble||o.bubbleUntil<Date.now())return;const{x,y}=pos(o),j=jumpOffset(o),yy=y-j;ctx.font='bold 13px sans-serif';const w=ctx.measureText(o.bubble).width+18;ctx.fillStyle='#fff';ctx.strokeStyle='#26343d';ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(x-w/2,yy-80,w,30,8);ctx.fill();ctx.stroke();ctx.fillStyle='#222';ctx.fillText(o.bubble,x-w/2+9,yy-59)}
 
 function drawClassroom(ctx,x,y,w,h,label,doorSide){
- // 2.5D shadow/extrusion
+ // 2.5D room body and shadow
  ctx.fillStyle='rgba(0,0,0,.18)';ctx.fillRect(x+14,y+18,w,h);
  ctx.fillStyle='#fffaf0';ctx.fillRect(x,y,w,h);
- ctx.strokeStyle='#53666a';ctx.lineWidth=18;ctx.strokeRect(x,y,w,h);
- // top wall highlight
- ctx.strokeStyle='#91a5a8';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(x+8,y+8);ctx.lineTo(x+w-8,y+8);ctx.stroke();
- ctx.fillStyle='#47605c';ctx.fillRect(x,y,w,48);ctx.fillStyle='#fff';ctx.font='bold 21px sans-serif';ctx.fillText(label,x+20,y+31);
- for(let k=0;k<5;k++){ctx.fillStyle='#aed8e9';ctx.fillRect(x+390+k*70,y+72,56,68);ctx.fillStyle='#fff8';ctx.fillRect(x+395+k*70,y+77,12,58)}
- for(let r=0;r<2;r++)for(let c=0;c<4;c++){rounded(ctx,x+70+c*145,y+145+r*88,78,36,5,'#d5a05f','#8b633f')}
- // door gap hint
- const dx=x+w/2-48;ctx.fillStyle='#8a5a3b';if(doorSide==='bottom')ctx.fillRect(dx,y+h-14,96,24);else ctx.fillRect(dx,y-10,96,24)
+
+ const wall=18,door=100,doorX=x+w/2-door/2;
+ ctx.lineCap='butt';
+
+ // side walls + opposite wall
+ ctx.strokeStyle='#53666a';ctx.lineWidth=wall;
+ ctx.beginPath();
+ ctx.moveTo(x,y);ctx.lineTo(x+w,y);
+ ctx.moveTo(x,y);ctx.lineTo(x,y+h);
+ ctx.moveTo(x+w,y);ctx.lineTo(x+w,y+h);
+ ctx.stroke();
+
+ // Door-side wall is drawn as TWO solid segments, leaving a real visible opening
+ ctx.beginPath();
+ if(doorSide==='bottom'){
+   ctx.moveTo(x,y+h);ctx.lineTo(doorX,y+h);
+   ctx.moveTo(doorX+door,y+h);ctx.lineTo(x+w,y+h);
+ }else{
+   // erase/redraw top wall as separated segments so the top doorway is visibly open
+   ctx.save();
+   ctx.globalCompositeOperation='destination-out';
+   ctx.lineWidth=wall+4;ctx.beginPath();ctx.moveTo(doorX,y);ctx.lineTo(doorX+door,y);ctx.stroke();
+   ctx.restore();
+   ctx.strokeStyle='#53666a';ctx.lineWidth=wall;
+   ctx.moveTo(x,y);ctx.lineTo(doorX,y);
+   ctx.moveTo(doorX+door,y);ctx.lineTo(x+w,y);
+ }
+ ctx.stroke();
+
+ // Highlight the doorway floor so students can immediately see the passage
+ ctx.fillStyle='#d9c09b';
+ const doorY=doorSide==='bottom'?y+h-8:y-8;
+ ctx.fillRect(doorX,doorY,door,16);
+ ctx.fillStyle='#fff4d7';
+ ctx.fillRect(doorX+10,doorY+3,door-20,10);
+
+ // header
+ ctx.fillStyle='#47605c';ctx.fillRect(x+wall/2,y+wall/2,w-wall,42);
+ ctx.fillStyle='#fff';ctx.font='bold 21px sans-serif';ctx.fillText(label,x+22,y+35);
+
+ // windows
+ for(let k=0;k<5;k++){
+   ctx.fillStyle='#aed8e9';ctx.fillRect(x+390+k*70,y+72,56,68);
+   ctx.fillStyle='#ffffff88';ctx.fillRect(x+395+k*70,y+77,12,58);
+ }
+
+ // furniture
+ for(let r=0;r<2;r++)for(let c=0;c<4;c++){
+   rounded(ctx,x+70+c*145,y+145+r*88,78,36,5,'#d5a05f','#8b633f');
+ }
 }
 function drawSchool(ctx,floor){
  const bg=ctx.createLinearGradient(0,0,0,MAP.h);bg.addColorStop(0,'#eef7f9');bg.addColorStop(1,'#d8e3dd');ctx.fillStyle=bg;ctx.fillRect(0,0,MAP.w,MAP.h);
@@ -292,25 +334,41 @@ function drawPlayerView(){
   else{$('roleHud').textContent=p.ghost?'🕵️👻 유령':'🕵️ 스파이';$('attackBtn').style.display='none';$('boostBtn').style.display=(p.alive&&timeLeft<=totalTime/2&&!p.boostUsed)?'block':'none'}
  }
 }
+
+function drawTeacherRoleTag(ctx,p){
+ const {x,y}=pos(p),j=jumpOffset(p);
+ const text=p.role==='spy'?'스파이':'경찰';
+ const fill=p.role==='spy'?'#b4232d':'#2467a6';
+ ctx.save();
+ ctx.font='bold 14px sans-serif';
+ const w=ctx.measureText(text).width+16;
+ ctx.fillStyle=fill;
+ ctx.beginPath();ctx.roundRect(x-w/2,y-j-76,w,22,9);ctx.fill();
+ ctx.fillStyle='#fff';ctx.textAlign='center';ctx.fillText(text,x,y-j-60);
+ ctx.restore();
+}
+
 function drawTeacherView(){
  tg.clearRect(0,0,teacherCanvas.width,teacherCanvas.height);
- const fit=Math.min(teacherCanvas.width/MAP.w,teacherCanvas.height/MAP.h)*.90,scale=fit*teacherZoom;
- const ox=teacherCanvas.width/2-MAP.w*scale/2+teacherPan.x,oy=teacherCanvas.height/2-MAP.h*scale/2+teacherPan.y;
+ const scale=Math.min(teacherCanvas.width/MAP.w,teacherCanvas.height/MAP.h)*.90;
+ const ox=teacherCanvas.width/2-MAP.w*scale/2,oy=teacherCanvas.height/2-MAP.h*scale/2;
  tg.save();tg.translate(ox,oy);tg.scale(scale,scale);drawArea(tg,selectedTeacherFloor);
  for(const n of npcs.filter(n=>n.floor===selectedTeacherFloor))drawPerson(tg,n);
- for(const p of Object.values(players).filter(p=>p.floor===selectedTeacherFloor))drawPerson(tg,p,{police:p.role==='police',revealed:p.role==='spy',name:p.nick});
+ for(const p of Object.values(players).filter(p=>p.floor===selectedTeacherFloor)){
+  drawPerson(tg,p,{police:p.role==='police',revealed:p.role==='spy',name:p.nick});
+  if(currentPhase==='reveal'||currentPhase==='playing'||currentPhase==='ended')drawTeacherRoleTag(tg,p);
+ }
  tg.restore();
  $('teacherTimer').textContent=currentPhase==='playing'?fmt(timeLeft):(currentPhase==='reveal'?'팀 확인 10초':'대기');
  $('teacherStats').textContent=`경찰 ${Object.values(players).filter(p=>p.role==='police'&&p.alive).length}명 · 스파이 ${Object.values(players).filter(p=>p.role==='spy'&&p.alive).length}명 · 학생 ${npcs.length}명`;
- $('zoomLabel').textContent=`${Math.round(teacherZoom*100)}%`;
+
 }
 
-document.querySelectorAll('#floorTabs button').forEach(b=>b.onclick=()=>{selectedTeacherFloor=+b.dataset.floor;teacherPan={x:0,y:0};sceneSound('floor')});
-$('zoomIn').onclick=()=>teacherZoom=clamp(teacherZoom*1.2,.55,3);$('zoomOut').onclick=()=>teacherZoom=clamp(teacherZoom/1.2,.55,3);$('zoomReset').onclick=()=>{teacherZoom=1;teacherPan={x:0,y:0}};
-teacherCanvas.addEventListener('wheel',e=>{e.preventDefault();teacherZoom=clamp(teacherZoom*(e.deltaY<0?1.12:.89),.55,3)},{passive:false});
-teacherCanvas.addEventListener('pointerdown',e=>{if(mode!=='teacher')return;dragState={id:e.pointerId,x:e.clientX,y:e.clientY,px:teacherPan.x,py:teacherPan.y};teacherCanvas.setPointerCapture(e.pointerId)});
-teacherCanvas.addEventListener('pointermove',e=>{if(!dragState||e.pointerId!==dragState.id)return;teacherPan.x=dragState.px+(e.clientX-dragState.x);teacherPan.y=dragState.py+(e.clientY-dragState.y)});
-teacherCanvas.addEventListener('pointerup',e=>{if(dragState&&e.pointerId===dragState.id)dragState=null});
+document.querySelectorAll('#floorTabs button').forEach(b=>b.onclick=()=>{selectedTeacherFloor=+b.dataset.floor;sceneSound('floor')});
+
+
+
+
 
 function resumeSavedSession(){
  const s=loadSession();if(!s||mode==='teacher')return;

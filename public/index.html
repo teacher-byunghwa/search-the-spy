@@ -35,8 +35,7 @@
   <div class="sectionIcon">🕵️</div>
   <div class="miniBadge">TEACHER ROOM</div>
   <h2>새 게임방 만들기</h2>
-  <p class="subText">수업 인원에 맞게 설정한 뒤 방을 열어주세요.</p>
-  <div class="grid2">
+    <div class="grid2">
    <label>스파이 수<input id="spies" type="number" min="1" max="15" value="4"></label>
    <label>게임 시간(분)<input id="mins" type="number" min="1" max="20" value="5"></label>
   </div>
@@ -45,21 +44,37 @@
  </div>
 </div>
 
-<div id="teacherLobby" class="screen">
- <div class="card teacherLobbyCard">
-  <h2>교사 대기실</h2>
-  <div class="roomCodeLabel">방 코드</div><div id="roomCode" class="roomCode">0000</div>
-  <div class="qrWrap">
-   <img id="joinQr" alt="학생 참가 QR 코드">
-   <div><p class="qrTitle">학생들은 이 QR 코드를 찍어 참가하세요.</p><p id="joinUrlText" class="joinUrlText"></p><button id="copyJoinLink">참가 링크 복사</button></div>
+<div id="teacherLobby" class="screen stylishBg">
+ <div class="teacherLobbyShell">
+  <div class="lobbyDecor">
+   <div class="lobbySpy">🕵️</div>
+   <div class="lobbyBubble">학생들이 모이고 있어요!</div>
+   <div class="miniFootprints">●　●　●</div>
   </div>
-  <p id="joinCount">참가 0명</p><div id="joinList" class="chips"></div>
-  <div id="lobbyScores" class="scoreBoard compact"></div>
-  <button id="startGame" class="primary">팀 배정 후 게임 시작</button>
+  <div class="card teacherLobbyCard modernLobby">
+   <div class="miniBadge">READY ROOM</div>
+   <h2>교사 대기실</h2>
+   <div class="roomCodeLabel">방 코드</div><div id="roomCode" class="roomCode">0000</div>
+   <div class="qrWrap funQrWrap">
+    <img id="joinQr" alt="학생 참가 QR 코드">
+    <div class="qrSide">
+     <p class="qrTitle">학생 참가 QR 코드</p>
+     <p id="joinUrlText" class="joinUrlText"></p>
+     <button id="copyJoinLink" class="cuteCopyBtn">🔗 참가 링크 복사</button>
+    </div>
+   </div>
+   <div class="lobbyInfoRow">
+    <div class="joinCounter">👥 <span id="joinCount">참가 0명</span></div>
+    <div class="readyHint">닉네임과 캐릭터 선택 후 자동 입장</div>
+   </div>
+   <div id="joinList" class="chips"></div>
+   <div id="lobbyScores" class="scoreBoard compact"></div>
+   <button id="startGame" class="primary wide">🎮 팀 배정 후 게임 시작</button>
+  </div>
  </div>
 </div>
 
-<div id="studentJoin" class="screen stylishBg">
+<div id="studentJoin"<div id="studentJoin" class="screen stylishBg">
  <div class="joinShell">
   <div class="joinMascot">🕵️‍♂️</div>
   <div class="modernCard joinCard">
@@ -125,10 +140,7 @@
   <div class="hudBox">👩‍🏫 교사 관전</div><div class="hudBox bigInfo" id="teacherTimer">00:00</div><div class="hudBox" id="teacherStats">-</div>
   <button id="showQrInGame" class="teacherAction">📱 QR 다시 보기</button>
  </div>
- <div id="teacherTools">
-  <button id="zoomOut">−</button><span id="zoomLabel">100%</span><button id="zoomIn">＋</button><button id="zoomReset">맞춤</button>
- </div>
- <div id="floorTabs"><button data-floor="0">운동장</button><button data-floor="1">1층</button><button data-floor="2">2층</button><button data-floor="3">3층</button></div>
+<div id="floorTabs"><button data-floor="0">운동장</button><button data-floor="1">1층</button><button data-floor="2">2층</button><button data-floor="3">3층</button></div>
  <div id="teacherLegend">🔵 경찰 &nbsp; 🔴 스파이 &nbsp; ⚪ 학생 &nbsp; 👻 탈락</div>
  <div id="teacherScoreBoard" class="scoreBoard floating"></div>
 </div>
