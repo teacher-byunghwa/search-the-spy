@@ -129,8 +129,26 @@ io.on('connection',socket=>{
  socket.on('startGame',({code},cb)=>{
   const r=rooms.get(String(code||''));if(!r||socket.id!==r.teacherId)return cb?.({ok:false,error:'교사만 시작할 수 있습니다.'});
   if(r.players.size<r.spies+1)return cb?.({ok:false,error:`최소 ${r.spies+1}명 이상 참가해야 합니다.`});
+
   const list=[...r.players.values()].sort(()=>Math.random()-.5);
-  list.forEach((p,i)=>{p.role=i<r.spies?'spy':'police';p.alive=true;p.ghost=false;p.revealed=false;p.miss=0;p.boostUsed=false;p.boostUntil=0;p.bubble='';p.bubbleUntil=0;p.jumpStart=0;p.jumpUntil=0;p.stairCooldownUntil=0;Object.assign(p,spawn(Math.floor(rand(1,4)))});
+
+  // FIXED: correctly close Object.assign(), block, and forEach()
+  list.forEach((p,i)=>{
+    p.role=i<r.spies?'spy':'police';
+    p.alive=true;
+    p.ghost=false;
+    p.revealed=false;
+    p.miss=0;
+    p.boostUsed=false;
+    p.boostUntil=0;
+    p.bubble='';
+    p.bubbleUntil=0;
+    p.jumpStart=0;
+    p.jumpUntil=0;
+    p.stairCooldownUntil=0;
+    Object.assign(p,spawn(Math.floor(rand(1,4))));
+  });
+
   r.npcs=Array.from({length:r.spies*7},(_,i)=>makeNPC(i,(i%3)+1));
   r.started=true;r.ended=false;r.timeLeft=r.minutes*60;r.lastTick=Date.now();
 
@@ -150,7 +168,6 @@ io.on('connection',socket=>{
 
    maybeFormGroup(r,now);
 
-   // nearby NPCs may stop and actually talk to each other
    if(Math.random()<0.045){
     const pool=r.npcs.filter(n=>n.pause<=0&&n.activity!=='stairs'&&!n.groupId);
     if(pool.length>1){
@@ -263,4 +280,4 @@ io.on('connection',socket=>{
  socket.on('disconnect',()=>{const r=rooms.get(socket.data.room);if(!r)return;if(socket.id===r.teacherId){clearInterval(r.timer);clearInterval(r.npcTimer);io.to(r.code).emit('roomClosed');rooms.delete(r.code)}else{r.players.delete(socket.id);pushLobby(r);if(r.started)pushState(r)}})
 });
 
-server.listen(process.env.PORT||3000,'0.0.0.0',()=>console.log('Spy School v8 server started'));
+server.listen(process.env.PORT||3000,'0.0.0.0',()=>console.log('Spy School v8 fixed server started'));
