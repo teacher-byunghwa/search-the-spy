@@ -153,10 +153,27 @@ socket.on('teacherGameStarted',s=>{if(mode!=='teacher')return;applyState(s);npcs
 socket.on('teacherState',s=>{if(mode==='teacher'){applyState(s);npcs=s.npcs||[]}});
 socket.on('gameStarted',()=>{currentPhase='playing';started=true;hideRevealAndGo();$('lobbyNotice').style.display='none'});
 socket.on('swingResult',r=>{whoosh();if(r.kind==='hit')setTimeout(thump,35)});
-socket.on('wrongHit',e=>{const t=e.type==='npc'?npcs.find(n=>n.id===e.targetId):players[e.targetId];if(t){t.bubble=e.text;t.bubbleUntil=Date.now()+1800}if(e.by===meId)toast(`❌ 오인 공격 ${e.miss}/3`)});
+socket.on('wrongHit',e=>{const t=e.type==='npc'?npcs.find(n=>n.id===e.targetId):players[e.targetId];if(t){t.bubble=e.text;t.bubbleUntil=Date.now()+1800}if(e.by===meId){
+ if(players[meId])players[meId].miss=e.miss;
+ $('roleHud').textContent=`🚔 ${'❤️'.repeat(Math.max(0,3-e.miss))}${'🖤'.repeat(Math.min(3,e.miss))}`;
+ toast(`❌ 오인 공격 ${e.miss}/3`);
+}});
 socket.on('spyCaught',e=>{if(players[e.spyId]){players[e.spyId].alive=false;players[e.spyId].ghost=true;players[e.spyId].revealed=true}if(e.by===meId){players[meId].miss=0;toast('🎯 스파이 검거! ❤️❤️❤️ 완전 회복!')}});
 socket.on('lifeReset',()=>{if(players[meId])players[meId].miss=0});
 socket.on('policeOut',e=>{if(players[e.id]){players[e.id].alive=false;players[e.id].ghost=true}});
+
+socket.on('spiesRevealed',e=>{
+ (e.ids||[]).forEach(id=>{if(players[id])players[id].revealed=true});
+ toast(e.message||'이제 스파이들의 정체가 드러났어요!');
+ tone(880,.10,'square',.045);tone(1175,.12,'square',.045,.09);
+});
+socket.on('policeLifeUpdated',e=>{
+ if(players[meId])players[meId].miss=e.miss;
+ if(myRole==='police'){
+   const miss=e.miss||0;
+   $('roleHud').textContent=`🚔 ${'❤️'.repeat(Math.max(0,3-miss))}${'🖤'.repeat(Math.min(3,miss))}`;
+ }
+});
 socket.on('boosted',e=>{if(players[e.id]){players[e.id].boostUntil=e.until;players[e.id].boostUsed=true;players[e.id].bubble=e.text;players[e.id].bubbleUntil=e.bubbleUntil}if(e.id===meId){boostUntil=e.until;toast('🚀 부스터 10초!')}});
 socket.on('gameEnded',e=>showEnd(e));
 
@@ -266,41 +283,13 @@ function touchesRect(px,py,r,rect){
 function checkPortalLocal(p){
  if(currentPhase!=='playing'||Date.now()<localPortalCooldown)return;
 
- // 계단 그래픽과 정확히 같은 네모칸 좌표.
- // 캐릭터 중심이 안에 들어가야 하는 방식이 아니라, 캐릭터 몸(반지름 20px)이
- // 네모칸에 조금이라도 닿는 순간 바로 층 이동한다.
- if(p.floor>0){
-  const stairZones=[
-   {side:'left', dir:'up',   x1:145,x2:235,y1:675,y2:709},
-   {side:'left', dir:'down', x1:145,x2:235,y1:780,y2:814},
-   {side:'right',dir:'up',   x1:2965,x2:3055,y1:675,y2:709},
-   {side:'right',dir:'down', x1:2965,x2:3055,y1:780,y2:814}
-  ];
-  const hit=stairZones.find(z=>touchesRect(p.x,p.y,20,z));
-  if(hit){
-   if(hit.dir==='up'&&p.floor<3){
-    p.floor++;
-    // 새 층에서는 계단 네모 밖 복도에 착지시켜 재판정/튕김 방지
-    p.x=hit.side==='left'?330:MAP.w-330;
-    p.y=742;
-    transitionLocal(p,`${p.floor}층`);
-    return;
-   }
-   if(hit.dir==='down'&&p.floor>1){
-    p.floor--;
-    p.x=hit.side==='left'?330:MAP.w-330;
-    p.y=742;
-    transitionLocal(p,`${p.floor}층`);
-    return;
-   }
-  }
- }
-
- // 1층 남쪽 복도 -> 운동장 3개 출입구
  const gate=entranceAtX(p.x);
- if(p.floor===1&&gate&&p.y>=1940){p.floor=0;p.y=370;transitionLocal(p,`운동장 · ${gate.name}`);return}
- // 운동장 학교 외벽의 3개 문 -> 1층 남쪽 복도
- if(p.floor===0&&gate&&p.y<=340){p.floor=1;p.y=1910;transitionLocal(p,`1층 · ${gate.name}`);return}
+ if(p.floor===1&&gate&&p.y>=1940){
+   p.floor=0;p.y=370;transitionLocal(p,`운동장 · ${gate.name}`);return;
+ }
+ if(p.floor===0&&gate&&p.y<=340){
+   p.floor=1;p.y=1910;transitionLocal(p,`1층 · ${gate.name}`);return;
+ }
 }
 function transitionLocal(p,label){localPortalCooldown=Date.now()+750;sceneSound('floor');toast(`📍 ${label}`);socket.emit('portalTransition',{floor:p.floor,x:p.x,y:p.y,label})}
 
@@ -521,7 +510,12 @@ function drawPlayerView(){
  for(const q of Object.values(players).filter(q=>q.floor===p.floor)){
   drawPerson(g,q,{police:q.role==='police',revealed:q.revealed,name:myRole&&q.role===myRole&&currentPhase==='reveal'?q.nick:(myRole==='spy'&&q.role==='spy'&&q.alive?q.nick:'')});bubble(g,q)
  }
- if(myRole==='police'&&p.alive&&currentPhase==='playing'){const j=jumpOffset(p);g.save();g.translate(p.x,p.y-j);let a=p.angle||angle;if(swingT>0){const prog=1-swingT/.22;a+=-1.05+prog*2}g.rotate(a);g.fillStyle='#6c4020';g.fillRect(13,-4,58,8);g.restore()}
+ if(myRole==='police'&&p.alive&&currentPhase==='playing'){const j=jumpOffset(p);g.save();g.translate(p.x,p.y-j);let a=p.angle||angle;if(swingT>0){const prog=1-swingT/.22;a+=-1.05+prog*2}g.rotate(a);
+  g.fillStyle='#111820';g.fillRect(10,-6,23,12);
+  g.fillStyle='#2c3440';g.fillRect(31,-5,58,10);
+  g.fillStyle='#0f141a';g.fillRect(84,-7,10,14);
+  g.fillStyle='#69727d';g.fillRect(34,-2,46,3);
+  g.restore()}
  g.restore();
 
  $('floorHud').textContent=p.floor===0?'운동장':`${p.floor}층`;
@@ -563,7 +557,7 @@ function drawTeacherView(){
 
 }
 
-document.querySelectorAll('#floorTabs button').forEach(b=>b.onclick=()=>{selectedTeacherFloor=+b.dataset.floor;teacherPan={x:0,y:0};sceneSound('floor')});
+document.querySelectorAll('#floorTabs button').forEach(b=>b.onclick=()=>{selectedTeacherFloor=Math.min(1,+b.dataset.floor);teacherPan={x:0,y:0};sceneSound('floor')});
 // 버튼 없이 마우스 휠로 확대/축소, 드래그로 이동
 teacherCanvas.addEventListener('wheel',e=>{if(mode!=='teacher')return;e.preventDefault();teacherZoom=clamp(teacherZoom*(e.deltaY<0?1.12:.89),.7,3.2)},{passive:false});
 teacherCanvas.addEventListener('pointerdown',e=>{if(mode!=='teacher')return;teacherDrag={id:e.pointerId,x:e.clientX,y:e.clientY,px:teacherPan.x,py:teacherPan.y};teacherCanvas.setPointerCapture(e.pointerId)});
