@@ -184,3 +184,37 @@ button,input{font:inherit}button{cursor:pointer}
 .studentMapHint{
  margin-top:7px;font-size:12px;color:#60737c;font-weight:800;text-align:center
 }
+
+/* v26: lower/easier overview-map close button for landscape tablets */
+.studentMapHeader{
+ position:relative;
+ padding-top:18px;
+ padding-right:58px;
+}
+#studentMapClose{
+ position:absolute;
+ right:6px;
+ top:18px;
+ width:48px;
+ height:48px;
+ min-width:48px;
+ min-height:48px;
+ z-index:3;
+ font-size:22px;
+ box-shadow:0 5px 14px rgba(0,0,0,.16);
+}
+@media (orientation:landscape) and (max-height:700px){
+ .studentMapHeader{
+  padding-top:30px;
+  min-height:64px;
+ }
+ #studentMapClose{
+  top:30px;
+  right:8px;
+  width:52px;
+  height:52px;
+  min-width:52px;
+  min-height:52px;
+  font-size:24px;
+ }
+}
