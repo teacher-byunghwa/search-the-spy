@@ -117,7 +117,10 @@
     <div><b>🗺️ 내 위치 전체맵</b><small id="studentMapPlace">현재 위치</small></div>
     <button id="studentMapClose" type="button">✕</button>
    </div>
-   <canvas id="studentMapCanvas" width="1000" height="620"></canvas>
+   <div id="studentMapViewport" class="studentMapViewport">
+    <canvas id="studentMapCanvas" width="1000" height="620"></canvas>
+   </div>
+   <div class="studentMapHint">두 손가락으로 확대·축소 · 한 손가락으로 이동</div>
    <div class="studentMapLegend"><span>🔵 내 위치</span><span>🌳 운동장</span><span>🏫 1층</span></div>
   </div>
  </div>

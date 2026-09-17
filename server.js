@@ -265,7 +265,7 @@ function startRound(r){
   if(r.phase!=='playing')return;
   const now=Date.now(),dt=(now-r.lastTick)/1000;r.lastTick=now;
   r.timeLeft=Math.max(0,r.timeLeft-dt);
-  if(!r.spiesRevealed && r.timeLeft<=60 && r.timeLeft>0){
+  if(!r.spiesRevealed && r.timeLeft<=90 && r.timeLeft>0){
     r.spiesRevealed=true;
     const ids=[];
     for(const p of r.players.values()){

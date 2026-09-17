@@ -537,25 +537,60 @@ function drawPlayerView(){
 }
 
 
-function drawStudentOverviewMap(){
- const c=$('studentMapCanvas'),p=players[meId];
- if(!c||!p)return;
- const ctx=c.getContext('2d'),W=c.width,H=c.height;
- ctx.clearRect(0,0,W,H);
+let studentMapZoom=1,studentMapPan={x:0,y:0};
+const studentMapPointers=new Map();
+let studentMapGestureStart=null;
 
- const margin=24,gap=24,panelW=(W-margin*2-gap)/2,panelH=H-48;
+function clampStudentMapTransform(){
+ const c=$('studentMapCanvas'),vp=$('studentMapViewport');
+ if(!c||!vp)return;
+ const rect=vp.getBoundingClientRect();
+ const minScale=1,maxScale=4;
+ studentMapZoom=Math.max(minScale,Math.min(maxScale,studentMapZoom));
+
+ // keep at least a useful portion of the map visible while panning
+ const drawnW=rect.width*studentMapZoom, drawnH=(rect.width*(620/1000))*studentMapZoom;
+ const maxX=Math.max(0,(drawnW-rect.width)/2)+rect.width*.18;
+ const maxY=Math.max(0,(drawnH-rect.height)/2)+rect.height*.18;
+ studentMapPan.x=Math.max(-maxX,Math.min(maxX,studentMapPan.x));
+ studentMapPan.y=Math.max(-maxY,Math.min(maxY,studentMapPan.y));
+}
+
+function drawStudentOverviewMap(){
+ const c=$('studentMapCanvas'),vp=$('studentMapViewport'),p=players[meId];
+ if(!c||!vp||!p)return;
+
+ const cssW=Math.max(320,vp.clientWidth||900);
+ const cssH=Math.min(680,Math.max(360,cssW*.62));
+ const dpr=Math.min(2,window.devicePixelRatio||1);
+ c.width=Math.round(cssW*dpr);c.height=Math.round(cssH*dpr);
+ c.style.width=cssW+'px';c.style.height=cssH+'px';
+ vp.style.height=cssH+'px';
+
+ const ctx=c.getContext('2d');
+ ctx.setTransform(dpr,0,0,dpr,0,0);
+ ctx.clearRect(0,0,cssW,cssH);
+
+ clampStudentMapTransform();
+
+ ctx.save();
+ ctx.translate(cssW/2+studentMapPan.x,cssH/2+studentMapPan.y);
+ ctx.scale(studentMapZoom,studentMapZoom);
+ ctx.translate(-cssW/2,-cssH/2);
+
+ const W=cssW,H=cssH,margin=18,gap=18,panelW=(W-margin*2-gap)/2,panelH=H-36;
  const panels=[
-  {floor:0,x:margin,y:24,w:panelW,h:panelH,title:'운동장'},
-  {floor:1,x:margin+panelW+gap,y:24,w:panelW,h:panelH,title:'1층'}
+  {floor:0,x:margin,y:18,w:panelW,h:panelH,title:'운동장'},
+  {floor:1,x:margin+panelW+gap,y:18,w:panelW,h:panelH,title:'1층'}
  ];
 
  for(const pn of panels){
   ctx.save();
   ctx.fillStyle=pn.floor===0?'#dcebd1':'#edf2f4';
   ctx.fillRect(pn.x,pn.y,pn.w,pn.h);
-  ctx.strokeStyle='#607983';ctx.lineWidth=3;ctx.strokeRect(pn.x,pn.y,pn.w,pn.h);
+  ctx.strokeStyle='#607983';ctx.lineWidth=2/studentMapZoom;ctx.strokeRect(pn.x,pn.y,pn.w,pn.h);
 
-  const pad=12;
+  const pad=10;
   const scale=Math.min((pn.w-pad*2)/MAP.w,(pn.h-pad*2)/MAP.h);
   const ox=pn.x+(pn.w-MAP.w*scale)/2;
   const oy=pn.y+(pn.h-MAP.h*scale)/2;
@@ -563,26 +598,110 @@ function drawStudentOverviewMap(){
   drawArea(ctx,pn.floor);
 
   if(p.floor===pn.floor){
-   ctx.fillStyle='#1877d2';ctx.strokeStyle='#fff';ctx.lineWidth=16;
-   ctx.beginPath();ctx.arc(p.x,p.y,55,0,Math.PI*2);ctx.stroke();ctx.fill();
-   ctx.fillStyle='#fff';ctx.font='bold 70px sans-serif';ctx.textAlign='center';
-   ctx.fillText('나',p.x,p.y+24);ctx.textAlign='left';
+   ctx.fillStyle='#1877d2';ctx.strokeStyle='#fff';ctx.lineWidth=14;
+   ctx.beginPath();ctx.arc(p.x,p.y,60,0,Math.PI*2);ctx.stroke();ctx.fill();
+   ctx.fillStyle='#fff';ctx.font='bold 72px sans-serif';ctx.textAlign='center';
+   ctx.fillText('나',p.x,p.y+25);ctx.textAlign='left';
   }
   ctx.restore();
 
-  ctx.fillStyle='#173b4d';ctx.font='bold 22px sans-serif';
-  ctx.fillText(pn.title,pn.x+12,pn.y+28);
+  ctx.fillStyle='#173b4d';ctx.font=`bold ${Math.max(15,20/studentMapZoom)}px sans-serif`;
+  ctx.fillText(pn.title,pn.x+10,pn.y+24);
  }
+ ctx.restore();
+
  $('studentMapPlace').textContent=`현재 위치: ${p.floor===0?'운동장':'1층'}`;
 }
 function openStudentMap(){
- drawStudentOverviewMap();
+ studentMapZoom=1;studentMapPan={x:0,y:0};
  $('studentMapModal').classList.add('open');
+ requestAnimationFrame(drawStudentOverviewMap);
 }
 function closeStudentMap(){$('studentMapModal').classList.remove('open')}
 $('studentMapBtn').onclick=openStudentMap;
 $('studentMapClose').onclick=closeStudentMap;
 $('studentMapModal').addEventListener('click',e=>{if(e.target===$('studentMapModal'))closeStudentMap()});
+
+const smv=$('studentMapViewport');
+function studentMapDist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function studentMapMid(a,b){return {x:(a.x+b.x)/2,y:(a.y+b.y)/2}}
+
+smv.addEventListener('pointerdown',e=>{
+ e.preventDefault();
+ smv.setPointerCapture(e.pointerId);
+ studentMapPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+ if(studentMapPointers.size===1){
+   const a=[...studentMapPointers.values()][0];
+   studentMapGestureStart={type:'pan',point:{...a},pan:{...studentMapPan}};
+ }else if(studentMapPointers.size===2){
+   const [a,b]=[...studentMapPointers.values()];
+   studentMapGestureStart={
+     type:'pinch',dist:studentMapDist(a,b),mid:studentMapMid(a,b),
+     zoom:studentMapZoom,pan:{...studentMapPan}
+   };
+ }
+},{passive:false});
+
+smv.addEventListener('pointermove',e=>{
+ if(!studentMapPointers.has(e.pointerId))return;
+ e.preventDefault();
+ studentMapPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+
+ if(studentMapPointers.size===1&&studentMapGestureStart?.type==='pan'){
+   const a=[...studentMapPointers.values()][0],s=studentMapGestureStart;
+   studentMapPan.x=s.pan.x+(a.x-s.point.x);
+   studentMapPan.y=s.pan.y+(a.y-s.point.y);
+   clampStudentMapTransform();drawStudentOverviewMap();
+ }else if(studentMapPointers.size===2){
+   const [a,b]=[...studentMapPointers.values()];
+   if(studentMapGestureStart?.type!=='pinch'){
+     studentMapGestureStart={type:'pinch',dist:studentMapDist(a,b),mid:studentMapMid(a,b),zoom:studentMapZoom,pan:{...studentMapPan}};
+   }
+   const s=studentMapGestureStart,dist=studentMapDist(a,b),mid=studentMapMid(a,b);
+   const ratio=s.dist>0?dist/s.dist:1;
+   const newZoom=Math.max(1,Math.min(4,s.zoom*ratio));
+
+   // Zoom around the fingers' midpoint rather than only the canvas center.
+   const rect=smv.getBoundingClientRect();
+   const cx=rect.left+rect.width/2,cy=rect.top+rect.height/2;
+   const vx=s.mid.x-cx-s.pan.x,vy=s.mid.y-cy-s.pan.y;
+   studentMapZoom=newZoom;
+   studentMapPan.x=(mid.x-cx)-vx*(newZoom/s.zoom);
+   studentMapPan.y=(mid.y-cy)-vy*(newZoom/s.zoom);
+   clampStudentMapTransform();drawStudentOverviewMap();
+ }
+},{passive:false});
+
+function endStudentMapPointer(e){
+ if(studentMapPointers.has(e.pointerId))studentMapPointers.delete(e.pointerId);
+ if(studentMapPointers.size===1){
+   const a=[...studentMapPointers.values()][0];
+   studentMapGestureStart={type:'pan',point:{...a},pan:{...studentMapPan}};
+ }else if(studentMapPointers.size===0){
+   studentMapGestureStart=null;
+ }
+}
+smv.addEventListener('pointerup',endStudentMapPointer);
+smv.addEventListener('pointercancel',endStudentMapPointer);
+
+// Mouse wheel support also works on laptops/desktops.
+smv.addEventListener('wheel',e=>{
+ e.preventDefault();
+ const rect=smv.getBoundingClientRect(),cx=rect.left+rect.width/2,cy=rect.top+rect.height/2;
+ const px=e.clientX-cx,py=e.clientY-cy;
+ const old=studentMapZoom;
+ const factor=e.deltaY<0?1.15:1/1.15;
+ const next=Math.max(1,Math.min(4,old*factor));
+ const vx=px-studentMapPan.x,vy=py-studentMapPan.y;
+ studentMapZoom=next;
+ studentMapPan.x=px-vx*(next/old);
+ studentMapPan.y=py-vy*(next/old);
+ clampStudentMapTransform();drawStudentOverviewMap();
+},{passive:false});
+
+window.addEventListener('resize',()=>{
+ if($('studentMapModal')?.classList.contains('open'))drawStudentOverviewMap();
+});
 
 function drawTeacherRoleTag(ctx,p){
  const {x,y}=pos(p),j=jumpOffset(p);

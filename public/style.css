@@ -171,3 +171,16 @@ button,input{font:inherit}button{cursor:pointer}
  .studentMapCard{padding:10px}
  .studentMapHeader b{font-size:17px}
 }
+
+/* v24: touch-friendly pinch/pan overview map */
+.studentMapViewport{
+ position:relative;overflow:hidden;border:1px solid #b9cdd6;border-radius:12px;
+ background:#dcecf2;touch-action:none;user-select:none;-webkit-user-select:none
+}
+#studentMapCanvas{
+ border:0!important;border-radius:0!important;max-height:none!important;
+ touch-action:none;display:block
+}
+.studentMapHint{
+ margin-top:7px;font-size:12px;color:#60737c;font-weight:800;text-align:center
+}
