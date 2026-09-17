@@ -20,7 +20,7 @@ app.get('/api/qr',async(req,res)=>{
 });
 
 const rooms=new Map();
-const MAP={w:3200,h:2000,floors:3};
+const MAP={w:3200,h:2000,floors:1};
 const SPEED=240;
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const rand=(a,b)=>Math.random()*(b-a)+a;
@@ -36,9 +36,8 @@ const PANTS=['#24313d','#334f67','#4a4458','#5b4b38','#2f3a32'];
 const BAGS=['#7a4f33','#395d78','#6b4f87','#8b5b63','#4a754d','#9a7438'];
 
 const INDOOR_CORRIDOR=[
- {x1:360,x2:2840,y1:650,y2:1190},
- {x1:480,x2:870,y1:260,y2:520},{x1:1190,x2:1580,y1:260,y2:520},{x1:1900,x2:2290,y1:260,y2:520},
- {x1:480,x2:870,y1:1480,y2:1740},{x1:1190,x2:1580,y1:1480,y2:1740},{x1:1900,x2:2290,y1:1480,y2:1740}
+ {x1:420,x2:2780,y1:620,y2:1260},       // 넓은 중앙 복도
+ {x1:380,x2:2820,y1:1760,y2:1910}        // 출구 연결 복도
 ];
 const YARD_ZONES=[
  {x1:180,x2:950,y1:300,y2:900},{x1:1020,x2:3020,y1:260,y2:920},
@@ -96,9 +95,9 @@ function pushState(r){io.to(r.code).emit('state',state(r))}
 function clearLoops(r){clearInterval(r.timer);clearInterval(r.npcTimer);clearTimeout(r.revealTimer)}
 
 const EXIT_PORTALS=[
- {name:'왼쪽 출입구',x1:970,x2:1090},
- {name:'가운데 출입구',x1:1950,x2:2070},
- {name:'오른쪽 출입구',x1:2960,x2:3120}
+ {name:'왼쪽 출입구',x1:520,x2:820},
+ {name:'가운데 출입구',x1:1450,x2:1750},
+ {name:'오른쪽 출입구',x1:2380,x2:2680}
 ];
 
 function roomWalls(){
@@ -120,10 +119,10 @@ const ROOM_WALLS=roomWalls();
 
 // 운동장 학교 건물 외벽. 3개 출입구 부분만 실제로 비어 있음.
 const SCHOOL_YARD_WALLS=[
- {x:650,y:40,w:320,h:300},
- {x:1090,y:40,w:860,h:300},
- {x:2070,y:40,w:890,h:300},
- {x:3120,y:40,w:30,h:300}
+ {x:360,y:120,w:160,h:220},
+ {x:820,y:120,w:630,h:220},
+ {x:1750,y:120,w:630,h:220},
+ {x:2680,y:120,w:160,h:220}
 ];
 
 // 농구장 울타리: 점프 중에만 통과 가능. 그림과 완전히 같은 좌표 사용.

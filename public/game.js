@@ -72,7 +72,7 @@ function applyState(s){
 function applyRoleUI(role,mates=[]){myRole=role;teammates=mates||[]}
 
 function openPlayerWorld(){
- document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));setTeacherGameVisible(false);setPlayerGameVisible(true);started=true;socket.emit('requestNPCs');
+ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));setTeacherGameVisible(false);setPlayerGameVisible(true);started=true;if(!['lobby','reveal','playing'].includes(currentPhase))currentPhase='lobby';socket.emit('requestNPCs');
  $('lobbyNotice').style.display=currentPhase==='lobby'?'block':'none';
 }
 function openTeacherWorld(){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));setPlayerGameVisible(false);setTeacherGameVisible(true);started=true}
@@ -97,7 +97,11 @@ function hideRevealAndGo(){
 
 $('createRoom').onclick=()=>{mode='teacher';audioCtx();socket.emit('createRoom',{spies:+$('spies').value,minutes:+$('mins').value},r=>{if(!r.ok)return alert(r.error);roomCode=r.code;$('roomCode').textContent=r.code;const u=buildJoinUrl(r.code);$('joinQr').src=`/api/qr?room=${r.code}`;$('joinUrlText').textContent=u;$('qrModalImage').src=`/api/qr?room=${r.code}`;$('qrModalUrl').textContent=u;showScreen('teacherLobby')})};
 $('joinRoom').onclick=()=>{audioCtx();const code=$('joinCode').value.trim(),nick=$('nickname').value.trim();if(!code||!nick){$('joinMessage').textContent='방 코드와 닉네임을 입력하세요.';return}pendingJoin={code,nick};$('characterModal').classList.add('open')};
-document.querySelectorAll('.characterChoice').forEach(b=>b.onclick=()=>{const gender=b.dataset.gender;$('characterModal').classList.remove('open');const{code,nick}=pendingJoin||{};if(!code||!nick)return;mode='student';socket.emit('joinRoom',{code,nick,gender},r=>{if(!r.ok){$('joinMessage').textContent=r.error;return}meId=r.id;roomCode=code;saveSession({code,playerId:r.id,reconnectToken:r.reconnectToken,nick});if(r.state)applyState(r.state);openPlayerWorld();updateScoreUI();toast('입장 완료! 친구들을 기다려 보세요.')})});
+document.querySelectorAll('.characterChoice').forEach(b=>b.onclick=()=>{const gender=b.dataset.gender;$('characterModal').classList.remove('open');const{code,nick}=pendingJoin||{};if(!code||!nick)return;mode='student';socket.emit('joinRoom',{code,nick,gender},r=>{if(!r.ok){$('joinMessage').textContent=r.error;return}meId=r.id;roomCode=code;saveSession({code,playerId:r.id,reconnectToken:r.reconnectToken,nick});
+currentPhase=r.state?.phase||'lobby';
+if(r.state)applyState(r.state);
+started=true;joy.dx=joy.dy=0;keys={};
+openPlayerWorld();updateScoreUI();toast('입장 완료! 친구들을 기다려 보세요.')})});
 $('cancelCharacter').onclick=()=>$('characterModal').classList.remove('open');
 $('startGame').onclick=()=>{feed=[];renderFeedLists();socket.emit('startGame',{code:roomCode},r=>{if(!r.ok)alert(r.error)})};
 $('restartGameBtn').onclick=()=>{feed=[];renderFeedLists();socket.emit('restartGame',{code:roomCode},r=>{if(!r.ok)alert(r.error)})};
@@ -234,9 +238,9 @@ addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
 
 function jumpOffset(o){const now=Date.now(),s=o?.jumpStart||0,e=o?.jumpUntil||0;if(now<s||now>e||e<=s)return 0;return Math.sin(Math.PI*((now-s)/(e-s)))*40}
 const EXIT_PORTALS=[
- {name:'왼쪽 출입구',x1:970,x2:1090},
- {name:'가운데 출입구',x1:1950,x2:2070},
- {name:'오른쪽 출입구',x1:2960,x2:3120}
+ {name:'왼쪽 출입구',x1:520,x2:820},
+ {name:'가운데 출입구',x1:1450,x2:1750},
+ {name:'오른쪽 출입구',x1:2380,x2:2680}
 ];
 const ROOM_WALLS=(()=>{
  const a=[],xs=[130,1110,2090],topY=90,bottomY=1370,w=820,h=360,t=18,door=100;
@@ -248,10 +252,10 @@ const ROOM_WALLS=(()=>{
  }return a;
 })();
 const SCHOOL_YARD_WALLS=[
- {x:650,y:40,w:320,h:300},
- {x:1090,y:40,w:860,h:300},
- {x:2070,y:40,w:890,h:300},
- {x:3120,y:40,w:30,h:300}
+ {x:360,y:120,w:160,h:220},
+ {x:820,y:120,w:630,h:220},
+ {x:1750,y:120,w:630,h:220},
+ {x:2680,y:120,w:160,h:220}
 ];
 const FENCES=[
  {x:160,y:1120,w:920,h:14},{x:160,y:1820,w:920,h:14},
@@ -376,58 +380,55 @@ function drawClassroom(ctx,x,y,w,h,label,doorSide){
  }
 }
 function drawSchool(ctx,floor){
- const bg=ctx.createLinearGradient(0,0,0,MAP.h);bg.addColorStop(0,'#eef7f9');bg.addColorStop(1,'#d8e3dd');ctx.fillStyle=bg;ctx.fillRect(0,0,MAP.w,MAP.h);
- // 중앙 복도
- ctx.fillStyle='#b8cbd5';ctx.fillRect(0,520,MAP.w,900);
- for(let y=540;y<1420;y+=60)for(let x=0;x<MAP.w;x+=90){ctx.strokeStyle='rgba(255,255,255,.24)';ctx.strokeRect(x,y,90,60)}
- const labels={1:['1-1 교실','1-2 교실','행정실','급식실','도서관','보건실'],2:['2-1 교실','컴퓨터실','과학실','영어실','미술실','교무실'],3:['3-1 교실','방송실','음악실','회의실','상담실','자료실']}[floor];
- const xs=[130,1110,2090];let i=0;
- for(const x of xs)drawClassroom(ctx,x,90,820,360,labels[i++],'bottom');
- for(const x of xs)drawClassroom(ctx,x,1510,820,360,labels[i++],'top');
+ const bg=ctx.createLinearGradient(0,0,0,MAP.h);
+ bg.addColorStop(0,'#eef7f9');bg.addColorStop(1,'#d8e3dd');
+ ctx.fillStyle=bg;ctx.fillRect(0,0,MAP.w,MAP.h);
 
- // 아랫줄 교실 뒤쪽에 출구 전용 가로 복도 + 세로 연결 통로를 명확하게 표시
- if(floor===1){
-  ctx.fillStyle='#d6e2e7';ctx.fillRect(0,1875,MAP.w,125);
-  ctx.fillStyle='#c3d4dc';
-  for(const gate of EXIT_PORTALS){ctx.fillRect(gate.x1,1320,gate.x2-gate.x1,680)}
-  ctx.strokeStyle='#8ca5b0';ctx.lineWidth=3;ctx.setLineDash([18,10]);ctx.beginPath();ctx.moveTo(0,1880);ctx.lineTo(MAP.w,1880);ctx.stroke();ctx.setLineDash([]);
-  for(const gate of EXIT_PORTALS){
-   const w=gate.x2-gate.x1;rounded(ctx,gate.x1,1910,w,80,12,'#315b75','#203f53');
-   ctx.fillStyle='#dff3fb';ctx.fillRect(gate.x1+12,1925,w-24,48);
-   ctx.fillStyle='#173b4d';ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.fillText(gate.name,gate.x1+w/2,1900);ctx.textAlign='left';
-  }
-  ctx.fillStyle='#47636d';ctx.font='bold 22px sans-serif';ctx.fillText('출입구 연결 복도',1400,1945);
+ // 넓은 중앙 복도
+ ctx.fillStyle='#b8cbd5';ctx.fillRect(0,520,MAP.w,820);
+ for(let y=540;y<1340;y+=60)for(let x=0;x<MAP.w;x+=90){
+  ctx.strokeStyle='rgba(255,255,255,.24)';ctx.strokeRect(x,y,90,60);
  }
 
- // 사물함/알림판/벤치
- for(let i=0;i<14;i++){ctx.fillStyle=i%2?'#91b7c8':'#80a5b6';ctx.fillRect(560+i*32,650,29,78);ctx.strokeStyle='#52707c';ctx.strokeRect(560+i*32,650,29,78)}
- rounded(ctx,1200,635,800,105,12,'#f7e3a0','#a98d48');ctx.fillStyle='#654';ctx.font='bold 22px sans-serif';ctx.fillText('🏫 오늘도 즐겁고 안전한 학교생활!',1390,695);
- rounded(ctx,950,1225,330,34,7,'#9f7046','#6e4a2f');rounded(ctx,1940,1225,330,34,7,'#9f7046','#6e4a2f');
+ const labels=['1-1 교실','1-2 교실','행정실','급식실','도서관','보건실'];
+ const xs=[130,1110,2090];let i=0;
+ for(const x of xs)drawClassroom(ctx,x,90,820,360,labels[i++],'bottom');
+ for(const x of xs)drawClassroom(ctx,x,1370,820,360,labels[i++],'top');
 
- // 계단
- for(const x of [120,MAP.w-260]){rounded(ctx,x+9,645,140,230,15,'rgba(0,0,0,.18)');rounded(ctx,x,630,140,230,15,'#3a596c','#233b49');rounded(ctx,x+25,675,90,34,8,floor<3?'#5f8fa7':'#455863','#d7edf7');rounded(ctx,x+25,780,90,34,8,floor>1?'#775f7b':'#4e4750','#eaddeb');ctx.fillStyle='#fff';ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.fillText(floor<3?'▲ 위층':'막힘',x+70,698);ctx.fillText(floor>1?'▼ 아래층':'막힘',x+70,803);ctx.textAlign='left'}
- if(floor===1){
-  // Wide exit-side corridor: clearly separated from the lower classrooms.
-  ctx.fillStyle='#a7bdc8';ctx.fillRect(80,1745,3040,205);
-  for(let x=90;x<3110;x+=100){
-    ctx.strokeStyle='rgba(255,255,255,.22)';
-    ctx.strokeRect(x,1745,100,68);
-    ctx.strokeRect(x,1813,100,68);
-    ctx.strokeRect(x,1881,100,68);
-  }
-  ctx.fillStyle='#344e5a';ctx.font='bold 22px sans-serif';
-  ctx.fillText('출구 연결 복도',1465,1780);
+ // 출구 쪽에 충분한 공간을 둔 전용 가로 복도
+ ctx.fillStyle='#a7bdc8';ctx.fillRect(80,1745,3040,205);
+ for(let x=90;x<3110;x+=100){
+  ctx.strokeStyle='rgba(255,255,255,.22)';
+  ctx.strokeRect(x,1745,100,68);
+  ctx.strokeRect(x,1813,100,68);
+  ctx.strokeRect(x,1881,100,68);
+ }
+ ctx.fillStyle='#344e5a';ctx.font='bold 22px sans-serif';
+ ctx.fillText('출구 연결 복도',1460,1780);
 
-  // Three exits: left / center / right
-  const exits=[520,1450,2380];
-  const names=['왼쪽 출구','가운데 출구','오른쪽 출구'];
-  exits.forEach((ex,idx)=>{
-    ctx.fillStyle='#315b75';ctx.fillRect(ex,1850,300,120);
-    ctx.fillStyle='#d9eff8';ctx.fillRect(ex+35,1870,110,90);ctx.fillRect(ex+155,1870,110,90);
-    ctx.fillStyle='#fff';ctx.font='bold 18px sans-serif';ctx.fillText(names[idx]+' → 운동장',ex+48,1838);
-  });
-}
- ctx.fillStyle='#415b60';ctx.font='bold 36px sans-serif';ctx.fillText(`${floor}층 중앙 복도`,1400,945);
+ // 딱 3개의 출입구만 표시
+ for(const gate of EXIT_PORTALS){
+  const w=gate.x2-gate.x1;
+  ctx.fillStyle='#315b75';ctx.fillRect(gate.x1,1850,w,120);
+  ctx.fillStyle='#d9eff8';ctx.fillRect(gate.x1+25,1870,w-50,90);
+  ctx.fillStyle='#ffffff';ctx.font='bold 18px sans-serif';ctx.textAlign='center';
+  ctx.fillText(gate.name,gate.x1+w/2,1838);
+  ctx.textAlign='left';
+ }
+
+ // 사물함 / 게시판 / 벤치
+ for(let i=0;i<14;i++){
+  ctx.fillStyle=i%2?'#91b7c8':'#80a5b6';ctx.fillRect(560+i*32,650,29,78);
+  ctx.strokeStyle='#52707c';ctx.strokeRect(560+i*32,650,29,78);
+ }
+ rounded(ctx,1200,635,800,105,12,'#f7e3a0','#a98d48');
+ ctx.fillStyle='#654';ctx.font='bold 22px sans-serif';
+ ctx.fillText('🏫 오늘도 즐겁고 안전한 학교생활!',1390,695);
+ rounded(ctx,950,1225,330,34,7,'#9f7046','#6e4a2f');
+ rounded(ctx,1940,1225,330,34,7,'#9f7046','#6e4a2f');
+
+ ctx.fillStyle='#415b60';ctx.font='bold 36px sans-serif';
+ ctx.fillText('1층 중앙 복도',1400,945);
 }
 
 function drawFenceRect(ctx,r){
@@ -454,14 +455,21 @@ function drawPlayground(ctx){
 function drawYard(ctx){
  const sky=ctx.createLinearGradient(0,0,0,MAP.h);sky.addColorStop(0,'#ccebf7');sky.addColorStop(.22,'#e9f5e7');sky.addColorStop(.23,'#78ad65');sky.addColorStop(1,'#5e984c');ctx.fillStyle=sky;ctx.fillRect(0,0,MAP.w,MAP.h);
 
- // 학교 외벽: 실제 충돌 구간을 그대로 그림. 세 곳만 문으로 비어 있음.
- ctx.fillStyle='rgba(0,0,0,.18)';ctx.fillRect(650,55,2500,300);
- for(const r of SCHOOL_YARD_WALLS){ctx.fillStyle='#f1e3c8';ctx.fillRect(r.x,r.y,r.w,r.h);ctx.fillStyle='#a95247';ctx.fillRect(r.x,r.y,r.w,38)}
+ // 학교 외벽: 왼쪽 / 가운데 / 오른쪽 3개 입구만 실제로 열려 있음.
+ ctx.fillStyle='rgba(0,0,0,.18)';ctx.fillRect(360,140,2480,220);
+ for(const r of SCHOOL_YARD_WALLS){
+  ctx.fillStyle='#f1e3c8';ctx.fillRect(r.x,r.y,r.w,r.h);
+  ctx.fillStyle='#a95247';ctx.fillRect(r.x,r.y,r.w,34);
+ }
  for(const gate of EXIT_PORTALS){
-  const w=gate.x2-gate.x1;rounded(ctx,gate.x1,245,w,95,12,'#315b75','#23445a');ctx.fillStyle='#dff3fb';ctx.fillRect(gate.x1+12,260,w-24,62);ctx.fillStyle='#173b4d';ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.fillText(gate.name,gate.x1+w/2,235);ctx.textAlign='left';
+  const w=gate.x2-gate.x1;
+  rounded(ctx,gate.x1,245,w,95,12,'#315b75','#23445a');
+  ctx.fillStyle='#dff3fb';ctx.fillRect(gate.x1+25,260,w-50,62);
+  ctx.fillStyle='#173b4d';ctx.font='bold 15px sans-serif';ctx.textAlign='center';
+  ctx.fillText(gate.name,gate.x1+w/2,230);
+  ctx.textAlign='left';
  }
  ctx.fillStyle='#fff';ctx.font='bold 25px sans-serif';ctx.fillText('우리 학교',1520,82);
-
  drawPlayground(ctx);
 
  // 넓은 육상 트랙/축구장
@@ -495,7 +503,7 @@ function loop(t){
    const nx=clamp(p.x+dx*sp*dt,20,MAP.w-20),ny=clamp(p.y+dy*sp*dt,20,MAP.h-20);
    resolveMoveLocal(p,nx,ny);p.angle=angle;checkPortalLocal(p);socket.emit('move',{x:p.x,y:p.y,angle:p.angle,floor:p.floor});
   }
-  if(swingT>0)swingT-=dt;drawPlayerView();
+  if(swingT>0)swingT-=dt;drawPlayerView();if($('studentMapModal')?.classList.contains('open'))drawStudentOverviewMap();
  }
  if(started&&mode==='teacher')drawTeacherView();
  requestAnimationFrame(loop);
@@ -527,6 +535,54 @@ function drawPlayerView(){
   else{$('roleHud').textContent=p.ghost?'🕵️👻 유령':'🕵️ 스파이';$('attackBtn').style.display='none';$('boostBtn').style.display=(p.alive&&timeLeft<=totalTime/2&&!p.boostUsed)?'block':'none'}
  }
 }
+
+
+function drawStudentOverviewMap(){
+ const c=$('studentMapCanvas'),p=players[meId];
+ if(!c||!p)return;
+ const ctx=c.getContext('2d'),W=c.width,H=c.height;
+ ctx.clearRect(0,0,W,H);
+
+ const margin=24,gap=24,panelW=(W-margin*2-gap)/2,panelH=H-48;
+ const panels=[
+  {floor:0,x:margin,y:24,w:panelW,h:panelH,title:'운동장'},
+  {floor:1,x:margin+panelW+gap,y:24,w:panelW,h:panelH,title:'1층'}
+ ];
+
+ for(const pn of panels){
+  ctx.save();
+  ctx.fillStyle=pn.floor===0?'#dcebd1':'#edf2f4';
+  ctx.fillRect(pn.x,pn.y,pn.w,pn.h);
+  ctx.strokeStyle='#607983';ctx.lineWidth=3;ctx.strokeRect(pn.x,pn.y,pn.w,pn.h);
+
+  const pad=12;
+  const scale=Math.min((pn.w-pad*2)/MAP.w,(pn.h-pad*2)/MAP.h);
+  const ox=pn.x+(pn.w-MAP.w*scale)/2;
+  const oy=pn.y+(pn.h-MAP.h*scale)/2;
+  ctx.translate(ox,oy);ctx.scale(scale,scale);
+  drawArea(ctx,pn.floor);
+
+  if(p.floor===pn.floor){
+   ctx.fillStyle='#1877d2';ctx.strokeStyle='#fff';ctx.lineWidth=16;
+   ctx.beginPath();ctx.arc(p.x,p.y,55,0,Math.PI*2);ctx.stroke();ctx.fill();
+   ctx.fillStyle='#fff';ctx.font='bold 70px sans-serif';ctx.textAlign='center';
+   ctx.fillText('나',p.x,p.y+24);ctx.textAlign='left';
+  }
+  ctx.restore();
+
+  ctx.fillStyle='#173b4d';ctx.font='bold 22px sans-serif';
+  ctx.fillText(pn.title,pn.x+12,pn.y+28);
+ }
+ $('studentMapPlace').textContent=`현재 위치: ${p.floor===0?'운동장':'1층'}`;
+}
+function openStudentMap(){
+ drawStudentOverviewMap();
+ $('studentMapModal').classList.add('open');
+}
+function closeStudentMap(){$('studentMapModal').classList.remove('open')}
+$('studentMapBtn').onclick=openStudentMap;
+$('studentMapClose').onclick=closeStudentMap;
+$('studentMapModal').addEventListener('click',e=>{if(e.target===$('studentMapModal'))closeStudentMap()});
 
 function drawTeacherRoleTag(ctx,p){
  const {x,y}=pos(p),j=jumpOffset(p);

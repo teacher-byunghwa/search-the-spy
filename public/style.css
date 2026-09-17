@@ -138,3 +138,36 @@ button,input{font:inherit}button{cursor:pointer}
  #teacherChatPanel{width:230px;top:145px}
  #teacherFeedList{max-height:145px}
 }
+
+/* v23: student overview map */
+.studentMapBtn{
+ position:fixed;right:14px;top:82px;z-index:35;border:0;border-radius:999px;
+ padding:10px 14px;background:rgba(20,47,62,.92);color:#fff;font-weight:900;
+ box-shadow:0 7px 18px rgba(0,0,0,.24);touch-action:manipulation
+}
+.studentMapModal{
+ display:none;position:fixed;inset:0;z-index:90;background:rgba(5,15,22,.74);
+ align-items:center;justify-content:center;padding:16px
+}
+.studentMapModal.open{display:flex}
+.studentMapCard{
+ width:min(980px,96vw);background:#f7fbfd;color:#20343c;border-radius:18px;
+ padding:14px;box-shadow:0 20px 55px rgba(0,0,0,.42)
+}
+.studentMapHeader{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:9px}
+.studentMapHeader b{font-size:20px}
+.studentMapHeader small{display:block;color:#6b7d85;margin-top:3px}
+#studentMapClose{
+ width:44px;height:44px;border:0;border-radius:50%;font-size:21px;font-weight:900;
+ background:#e6eef2;color:#223943
+}
+#studentMapCanvas{
+ display:block;width:100%;height:auto;max-height:72vh;border:1px solid #b9cdd6;
+ border-radius:12px;background:#dcecf2
+}
+.studentMapLegend{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;font-weight:900}
+@media(max-width:700px){
+ .studentMapBtn{right:10px;top:76px;padding:9px 11px;font-size:13px}
+ .studentMapCard{padding:10px}
+ .studentMapHeader b{font-size:17px}
+}

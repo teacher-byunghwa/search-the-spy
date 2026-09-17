@@ -110,6 +110,17 @@
   <div class="hudBox" id="scoreHud">⭐ 0</div>
  </div>
  <div id="lobbyNotice">친구들이 들어오는 동안 학교 안에서 자유롭게 기다려 보세요!</div>
+ <button id="studentMapBtn" class="studentMapBtn" type="button">🗺️ 전체맵</button>
+ <div id="studentMapModal" class="studentMapModal">
+  <div class="studentMapCard">
+   <div class="studentMapHeader">
+    <div><b>🗺️ 내 위치 전체맵</b><small id="studentMapPlace">현재 위치</small></div>
+    <button id="studentMapClose" type="button">✕</button>
+   </div>
+   <canvas id="studentMapCanvas" width="1000" height="620"></canvas>
+   <div class="studentMapLegend"><span>🔵 내 위치</span><span>🌳 운동장</span><span>🏫 1층</span></div>
+  </div>
+ </div>
  <div id="toast"></div>
  <div id="feedPanel"><div class="feedTitle">💬 채팅 / 상태</div><div id="feedList"></div></div>
  <div id="chatPanel"><button id="chatToggle">💬 말하기</button>
