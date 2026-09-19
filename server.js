@@ -83,7 +83,7 @@ function lobby(r){
 function state(r){
  return{
   code:r.code,spies:r.spies,minutes:r.minutes,timeLeft:r.timeLeft,total:r.minutes*60,
-  players:[...r.players.values()].map(playerView),phase:r.phase
+  players:[...r.players.values()].map(playerView),phase:r.phase,fishItems:r.fishItems||[],fishExpireAt:r.fishExpireAt||0
  };
 }
 function scoreBoard(r){
@@ -135,10 +135,10 @@ const FENCE_RECTS=[
 
 // 놀이터의 실제 단단한 구조물
 const PLAYGROUND_SOLIDS=[
- {x:270,y:420,w:120,h:36},   // 미끄럼틀 바닥
- {x:500,y:420,w:22,h:150},   // 그네 기둥
- {x:760,y:420,w:22,h:150},   // 그네 기둥
- {x:470,y:555,w:340,h:24}    // 모래놀이터 테두리 일부
+ {x:120,y:730,w:100,h:34},
+ {x:260,y:700,w:18,h:150},
+ {x:410,y:700,w:18,h:150},
+ {x:105,y:880,w:350,h:22}
 ];
 
 function rectContains(r,x,y,rad=18){return x+rad>r.x&&x-rad<r.x+r.w&&y+rad>r.y&&y-rad<r.y+r.h}
@@ -219,8 +219,32 @@ function pickNPCActivity(n,now){
  }
 }
 
+function spawnFishItems(r){
+ const yard=[
+  [430,820],[980,760],[1370,760],[1840,720],
+  [2320,760],[2860,820],[1450,1530],[2450,1530]
+ ];
+ const first=[
+  [430,760],[950,880],[1390,760],[1830,880],
+  [2350,760],[2820,880],[980,1210],[2200,1210]
+ ];
+ let n=1;
+ r.fishItems=[
+  ...yard.map(([x,y])=>({id:`fish-${n++}`,floor:0,x,y,active:true})),
+  ...first.map(([x,y])=>({id:`fish-${n++}`,floor:1,x,y,active:true}))
+ ];
+ r.fishExpireAt=Date.now()+20000;
+ io.to(r.code).emit('fishSpawned',{items:r.fishItems,expireAt:r.fishExpireAt});
+ setTimeout(()=>{
+  if(!rooms.has(r.code))return;
+  if(r.fishExpireAt&&Date.now()>=r.fishExpireAt){
+   r.fishItems=[];r.fishExpireAt=0;io.to(r.code).emit('fishExpired');pushState(r);
+  }
+ },20100);
+}
+
 function distributeNPCs(r){
- const total=r.spies*7;
+ const total=Math.max(1,Math.round(r.spies*2.5));
  r.npcs=[];
  for(let i=0;i<total;i++){
    const area=i%2; // 운동장 / 1층 균등 배치
@@ -239,7 +263,7 @@ function prepareRound(r){
   Object.assign(p,spawn(i%2));
  });
  distributeNPCs(r);
- r.timeLeft=r.minutes*60;r.phase='reveal';r.lastTick=Date.now();r.spiesRevealed=false;
+ r.timeLeft=r.minutes*60;r.phase='reveal';r.lastTick=Date.now();r.spiesRevealed=false;r.fishItems=[];r.fishExpireAt=0;
  io.to(r.code).emit('clearFeed');r.warned30=false;
 
  for(const p of shuffled){
@@ -275,6 +299,7 @@ function startRound(r){
       }
     }
     io.to(r.code).emit('spiesRevealed',{ids,message:'이제 스파이들의 정체가 드러났어요!'});
+    spawnFishItems(r);
     pushState(r);
   }
   if(!r.warned30&&r.timeLeft<=30){r.warned30=true;io.to(r.code).emit('thirtySecondWarning',{text:'게임 30초 남았습니다!'});}
@@ -337,7 +362,7 @@ io.on('connection',socket=>{
   spies=clamp(+spies||1,1,15);minutes=clamp(+minutes||5,1,20);
   const code=newCode();
   const r={code,spies,minutes,teacherId:socket.id,players:new Map(),npcs:[],phase:'lobby',
-   timeLeft:minutes*60,timer:null,npcTimer:null,revealTimer:null,lastTick:Date.now(),spiesRevealed:false,warned30:false};
+   timeLeft:minutes*60,timer:null,npcTimer:null,revealTimer:null,lastTick:Date.now(),spiesRevealed:false,warned30:false,fishItems:[],fishExpireAt:0};
   rooms.set(code,r);socket.join(code);socket.data.room=code;socket.data.teacher=true;
   cb?.({ok:true,code});pushLobby(r);
  });
@@ -459,11 +484,17 @@ io.on('connection',socket=>{
   }
  });
 
- socket.on('useBoost',()=>{
+ socket.on('pickupFish',({fishId})=>{
   const r=rooms.get(socket.data.room),p=r?.players.get(socket.data.playerId);
-  if(!r||!p||r.phase!=='playing'||!p.alive||p.role!=='spy'||p.boostUsed||r.timeLeft>r.minutes*60/2)return;
-  p.boostUsed=true;p.boostUntil=Date.now()+10000;p.bubble=choice(TAUNTS);p.bubbleUntil=p.boostUntil;
+  if(!r||!p||r.phase!=='playing'||!p.alive||p.role!=='spy'||p.boostUsed)return;
+  if(!r.fishExpireAt||Date.now()>r.fishExpireAt)return;
+  const fish=r.fishItems.find(f=>f.id===String(fishId||'')&&f.active);
+  if(!fish||fish.floor!==p.floor||Math.hypot(fish.x-p.x,fish.y-p.y)>90)return;
+  fish.active=false;p.boostUsed=true;p.boostUntil=Date.now()+10000;
+  p.bubble='붕어빵 파워!';p.bubbleUntil=p.boostUntil;
+  io.to(r.code).emit('fishTaken',{fishId:fish.id,playerId:p.id,nick:p.nick});
   io.to(r.code).emit('boosted',{id:p.id,until:p.boostUntil,text:p.bubble,bubbleUntil:p.bubbleUntil});
+  pushState(r);
  });
 
  socket.on('forceEndGame',({code},cb)=>{

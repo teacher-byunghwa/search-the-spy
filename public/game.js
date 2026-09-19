@@ -3,6 +3,7 @@ const MAP={w:3200,h:2000},SPEED=240;
 let mode=null,roomCode='',meId=null,myRole=null,teammates=[],players={},npcs=[],started=false,timeLeft=0,totalTime=1,currentPhase='lobby';
 let selectedTeacherFloor=1,keys={},angle=0,boostUntil=0,swingT=0,last=performance.now(),cam={x:0,y:0},joy={pointerId:null,dx:0,dy:0};
 let latestScores=[],pendingJoin=null,revealCountdown=null,feed=[],teacherZoom=1,teacherPan={x:0,y:0},teacherDrag=null,localPortalCooldown=0;
+let fishItems=[],fishExpireAt=0,fishPickupPending=false;
 const $=id=>document.getElementById(id),gameCanvas=$('gameCanvas'),g=gameCanvas.getContext('2d'),teacherCanvas=$('teacherCanvas'),tg=teacherCanvas.getContext('2d');
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const SESSION_KEY='spySchoolStudentSessionV12';
@@ -64,6 +65,7 @@ function addFeed(item){
 
 function applyState(s){
  currentPhase=s.phase??currentPhase;timeLeft=s.timeLeft??timeLeft;totalTime=s.total??s.minutes*60??totalTime;
+ if(Array.isArray(s.fishItems))fishItems=s.fishItems.map(f=>({...f}));fishExpireAt=s.fishExpireAt||0;
  (s.players||[]).forEach(p=>{
   const old=players[p.id]||{};
   players[p.id]={...old,...p,rx:old.rx??p.x,ry:old.ry??p.y};
@@ -143,7 +145,7 @@ socket.on('playerBubble',e=>{if(players[e.id]){players[e.id].bubble=e.text;playe
 socket.on('chatFeed',addFeed);
 
 socket.on('clearFeed',()=>{
- feed=[];
+ feed=[];fishItems=[];fishExpireAt=0;fishPickupPending=false;
  renderFeedLists();
 });
 
@@ -178,6 +180,15 @@ socket.on('policeLifeUpdated',e=>{
    $('roleHud').textContent=`🚔 ${'❤️'.repeat(Math.max(0,3-miss))}${'🖤'.repeat(Math.min(3,miss))}`;
  }
 });
+socket.on('fishSpawned',e=>{
+ fishItems=(e.items||[]).map(f=>({...f}));fishExpireAt=e.expireAt||0;fishPickupPending=false;
+ toast('🐟 붕어빵이 나타났어요! 20초 동안 먹을 수 있어요!');
+});
+socket.on('fishTaken',e=>{
+ const f=fishItems.find(x=>x.id===e.fishId);if(f)f.active=false;
+ if(e.playerId===meId){fishPickupPending=false;toast('🐟 붕어빵 파워! 10초 부스터!')}
+});
+socket.on('fishExpired',()=>{fishItems=[];fishExpireAt=0;fishPickupPending=false});
 socket.on('boosted',e=>{if(players[e.id]){players[e.id].boostUntil=e.until;players[e.id].boostUsed=true;players[e.id].bubble=e.text;players[e.id].bubbleUntil=e.bubbleUntil}if(e.id===meId){boostUntil=e.until;toast('🚀 부스터 10초!')}});
 socket.on('gameEnded',e=>showEnd(e));
 
@@ -208,7 +219,6 @@ function showEnd(e){
 
 $('attackBtn').addEventListener('pointerdown',e=>{e.preventDefault();attack()});
 function attack(){if(currentPhase!=='playing'||myRole!=='police'||!players[meId]?.alive)return;swingT=.22;socket.emit('hitAttempt')}
-$('boostBtn').addEventListener('pointerdown',e=>{e.preventDefault();socket.emit('useBoost')});
 $('jumpBtn').addEventListener('pointerdown',e=>{e.preventDefault();jump()});
 function jump(){if(!['lobby','playing'].includes(currentPhase)||!players[meId])return;const p=players[meId],now=Date.now();if((p.jumpUntil||0)>now)return;p.jumpStart=now;p.jumpUntil=now+650;socket.emit('jump')}
 
@@ -442,15 +452,13 @@ function drawGoal(ctx,x,y,flip=1){
  ctx.save();ctx.translate(x,y);ctx.scale(flip,1);ctx.strokeStyle='#fff';ctx.lineWidth=9;ctx.strokeRect(0,0,120,160);ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=2;for(let i=20;i<120;i+=20){ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i,160);ctx.stroke()}for(let j=20;j<160;j+=20){ctx.beginPath();ctx.moveTo(0,j);ctx.lineTo(120,j);ctx.stroke()}ctx.restore();
 }
 function drawPlayground(ctx){
- // 놀이터 바닥
- rounded(ctx,150,330,780,360,24,'#e7c88b','#b5965e');
- ctx.fillStyle='#5c8eb5';ctx.font='bold 24px sans-serif';ctx.fillText('놀이터',180,370);
- // 미끄럼틀
- ctx.fillStyle='#e85f55';ctx.fillRect(270,420,120,36);ctx.strokeStyle='#3978a1';ctx.lineWidth=10;ctx.beginPath();ctx.moveTo(300,420);ctx.lineTo(235,545);ctx.stroke();ctx.fillStyle='#ffd34d';ctx.fillRect(285,380,90,45);
- // 그네
- ctx.strokeStyle='#3e6f8a';ctx.lineWidth=12;ctx.beginPath();ctx.moveTo(500,570);ctx.lineTo(535,390);ctx.lineTo(745,390);ctx.lineTo(780,570);ctx.stroke();ctx.strokeStyle='#444';ctx.lineWidth=4;for(const sx of [590,690]){ctx.beginPath();ctx.moveTo(sx,400);ctx.lineTo(sx,510);ctx.moveTo(sx+35,400);ctx.lineTo(sx+35,510);ctx.stroke();ctx.fillStyle='#d65b55';ctx.fillRect(sx-4,505,44,13)}
- // 모래놀이 영역 테두리
- ctx.strokeStyle='#9a7d50';ctx.lineWidth=10;ctx.strokeRect(470,555,340,24);
+ // 왼쪽 출입구 통로(x 520~820)는 비워 두고, 놀이터는 그 왼쪽 아래로 이동
+ rounded(ctx,70,650,420,360,24,'#e7c88b','#b5965e');
+ ctx.fillStyle='#5c8eb5';ctx.font='bold 24px sans-serif';ctx.fillText('놀이터',100,690);
+ ctx.fillStyle='#e85f55';ctx.fillRect(120,730,100,34);ctx.strokeStyle='#3978a1';ctx.lineWidth=9;ctx.beginPath();ctx.moveTo(145,730);ctx.lineTo(95,845);ctx.stroke();ctx.fillStyle='#ffd34d';ctx.fillRect(132,695,75,40);
+ ctx.strokeStyle='#3e6f8a';ctx.lineWidth=10;ctx.beginPath();ctx.moveTo(260,850);ctx.lineTo(280,690);ctx.lineTo(405,690);ctx.lineTo(430,850);ctx.stroke();
+ ctx.strokeStyle='#444';ctx.lineWidth=4;for(const sx of [310,365]){ctx.beginPath();ctx.moveTo(sx,700);ctx.lineTo(sx,805);ctx.moveTo(sx+28,700);ctx.lineTo(sx+28,805);ctx.stroke();ctx.fillStyle='#d65b55';ctx.fillRect(sx-3,800,35,12)}
+ ctx.strokeStyle='#9a7d50';ctx.lineWidth=9;ctx.strokeRect(105,880,350,22);
 }
 function drawYard(ctx){
  const sky=ctx.createLinearGradient(0,0,0,MAP.h);sky.addColorStop(0,'#ccebf7');sky.addColorStop(.22,'#e9f5e7');sky.addColorStop(.23,'#78ad65');sky.addColorStop(1,'#5e984c');ctx.fillStyle=sky;ctx.fillRect(0,0,MAP.w,MAP.h);
@@ -470,6 +478,11 @@ function drawYard(ctx){
   ctx.textAlign='left';
  }
  ctx.fillStyle='#fff';ctx.font='bold 25px sans-serif';ctx.fillText('우리 학교',1520,82);
+ // 세 출입구 앞은 구조물이 없는 넓은 이동 통로
+ for(const gate of EXIT_PORTALS){
+  ctx.fillStyle='rgba(231,220,187,.62)';ctx.fillRect(gate.x1-55,340,(gate.x2-gate.x1)+110,440);
+  ctx.strokeStyle='rgba(111,92,63,.32)';ctx.lineWidth=3;ctx.strokeRect(gate.x1-55,340,(gate.x2-gate.x1)+110,440);
+ }
  drawPlayground(ctx);
 
  // 넓은 육상 트랙/축구장
@@ -503,17 +516,34 @@ function loop(t){
    const nx=clamp(p.x+dx*sp*dt,20,MAP.w-20),ny=clamp(p.y+dy*sp*dt,20,MAP.h-20);
    resolveMoveLocal(p,nx,ny);p.angle=angle;checkPortalLocal(p);socket.emit('move',{x:p.x,y:p.y,angle:p.angle,floor:p.floor});
   }
-  if(swingT>0)swingT-=dt;drawPlayerView();if($('studentMapModal')?.classList.contains('open'))drawStudentOverviewMap();
+  tryPickupNearbyFish();if(swingT>0)swingT-=dt;drawPlayerView();if($('studentMapModal')?.classList.contains('open'))drawStudentOverviewMap();
  }
  if(started&&mode==='teacher')drawTeacherView();
  requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 
+function drawFishItems(ctx,floor){
+ if(!fishItems.length||!fishExpireAt||Date.now()>fishExpireAt)return;
+ const pulse=1+Math.sin(Date.now()/150)*.08;
+ for(const f of fishItems){
+  if(!f.active||f.floor!==floor)continue;
+  ctx.save();ctx.translate(f.x,f.y);ctx.scale(pulse,pulse);
+  ctx.fillStyle='rgba(255,205,70,.28)';ctx.beginPath();ctx.arc(0,0,46,0,Math.PI*2);ctx.fill();
+  ctx.font='46px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('🐟',0,0);ctx.restore();
+ }
+}
+function tryPickupNearbyFish(){
+ const p=players[meId];
+ if(!p||p.role!=='spy'||!p.alive||p.boostUsed||fishPickupPending||!fishExpireAt||Date.now()>fishExpireAt)return;
+ const f=fishItems.find(x=>x.active&&x.floor===p.floor&&Math.hypot(x.x-p.x,x.y-p.y)<=75);
+ if(f){fishPickupPending=true;socket.emit('pickupFish',{fishId:f.id});setTimeout(()=>fishPickupPending=false,450)}
+}
+
 function drawPlayerView(){
  const p=players[meId];if(!p)return;
  cam.x=clamp(p.x-gameCanvas.width/2,0,Math.max(0,MAP.w-gameCanvas.width));cam.y=clamp(p.y-gameCanvas.height/2,0,Math.max(0,MAP.h-gameCanvas.height));
- g.clearRect(0,0,gameCanvas.width,gameCanvas.height);g.save();g.translate(-cam.x,-cam.y);drawArea(g,p.floor);
+ g.clearRect(0,0,gameCanvas.width,gameCanvas.height);g.save();g.translate(-cam.x,-cam.y);drawArea(g,p.floor);drawFishItems(g,p.floor);
  for(const n of npcs.filter(n=>n.floor===p.floor)){drawPerson(g,n);bubble(g,n)}
  for(const q of Object.values(players).filter(q=>q.floor===p.floor)){
   drawPerson(g,q,{police:q.role==='police',revealed:q.revealed,name:myRole&&q.role===myRole&&currentPhase==='reveal'?q.nick:(myRole==='spy'&&q.role==='spy'&&q.alive?q.nick:'')});bubble(g,q)
@@ -720,7 +750,7 @@ function drawTeacherView(){
  tg.clearRect(0,0,teacherCanvas.width,teacherCanvas.height);
  const fit=Math.min(teacherCanvas.width/MAP.w,teacherCanvas.height/MAP.h)*.90,scale=fit*teacherZoom;
  const ox=teacherCanvas.width/2-MAP.w*scale/2+teacherPan.x,oy=teacherCanvas.height/2-MAP.h*scale/2+teacherPan.y;
- tg.save();tg.translate(ox,oy);tg.scale(scale,scale);drawArea(tg,selectedTeacherFloor);
+ tg.save();tg.translate(ox,oy);tg.scale(scale,scale);drawArea(tg,selectedTeacherFloor);drawFishItems(tg,selectedTeacherFloor);
  for(const n of npcs.filter(n=>n.floor===selectedTeacherFloor))drawPerson(tg,n);
  for(const p of Object.values(players).filter(p=>p.floor===selectedTeacherFloor)){
   drawPerson(tg,p,{police:p.role==='police',revealed:p.role==='spy',name:p.nick});
