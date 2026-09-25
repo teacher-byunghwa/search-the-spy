@@ -148,12 +148,21 @@ const PLAYGROUND_SOLIDS=[
  {x:105,y:880,w:350,h:22}
 ];
 
+const TREE_OBSTACLES=[
+ {x:260,y:720,r:62},{x:2940,y:720,r:62},
+ {x:260,y:1600,r:62},{x:2940,y:1600,r:62},
+ {x:500,y:1200,r:58},{x:2700,y:1200,r:58},
+ {x:1180,y:1660,r:54},{x:2180,y:1660,r:54}
+];
+
 function rectContains(r,x,y,rad=18){return x+rad>r.x&&x-rad<r.x+r.w&&y+rad>r.y&&y-rad<r.y+r.h}
+function circleContains(c,x,y,rad=18){const rr=c.r+rad;return (x-c.x)*(x-c.x)+(y-c.y)*(y-c.y)<rr*rr}
 function isBlocked(floor,x,y,jumping=false){
  if(x<28||x>MAP.w-28||y<28||y>MAP.h-28)return true;
  if(floor>0)return ROOM_WALLS.some(r=>rectContains(r,x,y,17));
  if(SCHOOL_YARD_WALLS.some(r=>rectContains(r,x,y,17)))return true;
  if(PLAYGROUND_SOLIDS.some(r=>rectContains(r,x,y,17)))return true;
+ if(TREE_OBSTACLES.some(t=>circleContains(t,x,y,20)))return true;
  if(!jumping&&FENCE_RECTS.some(r=>rectContains(r,x,y,17)))return true;
  return false;
 }

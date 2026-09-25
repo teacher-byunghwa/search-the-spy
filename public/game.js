@@ -375,13 +375,22 @@ const PLAYGROUND_SOLIDS=[
  {x:270,y:420,w:120,h:36},{x:500,y:420,w:22,h:150},
  {x:760,y:420,w:22,h:150},{x:470,y:555,w:340,h:24}
 ];
+
+const TREE_OBSTACLES=[
+ {x:260,y:720,r:62},{x:2940,y:720,r:62},
+ {x:260,y:1600,r:62},{x:2940,y:1600,r:62},
+ {x:500,y:1200,r:58},{x:2700,y:1200,r:58},
+ {x:1180,y:1660,r:54},{x:2180,y:1660,r:54}
+];
 function hitRect(r,x,y,rad=18){return x+rad>r.x&&x-rad<r.x+r.w&&y+rad>r.y&&y-rad<r.y+r.h}
+function hitCircle(c,x,y,rad=18){const rr=c.r+rad;return (x-c.x)*(x-c.x)+(y-c.y)*(y-c.y)<rr*rr}
 function blockedLocal(p,x,y){
  if(x<28||x>MAP.w-28||y<28||y>MAP.h-28)return true;
  const jumping=Date.now()<(p.jumpUntil||0);
  if(p.floor>0)return ROOM_WALLS.some(r=>hitRect(r,x,y,17));
  if(SCHOOL_YARD_WALLS.some(r=>hitRect(r,x,y,17)))return true;
  if(PLAYGROUND_SOLIDS.some(r=>hitRect(r,x,y,17)))return true;
+ if(TREE_OBSTACLES.some(t=>hitCircle(t,x,y,20)))return true;
  if(!jumping&&FENCES.some(r=>hitRect(r,x,y,17)))return true;
  return false;
 }
@@ -427,6 +436,27 @@ function drawEyes(ctx,x,y){ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(x-4,y-19
 function drawHair(ctx,x,y,a){ctx.fillStyle=a?.hairColor||'#2d241e';const h=a?.hair||'short';if(h==='bob'||h==='long'){ctx.beginPath();ctx.arc(x,y-24,13,Math.PI,Math.PI*2);ctx.fill();ctx.fillRect(x-12,y-24,5,h==='long'?27:18);ctx.fillRect(x+7,y-24,5,h==='long'?27:18)}else if(h==='ponytail'){ctx.beginPath();ctx.arc(x,y-24,12,Math.PI,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(x+14,y-20,6,0,Math.PI*2);ctx.fill()}else if(h==='spiky'){for(let i=-2;i<=2;i++){ctx.beginPath();ctx.moveTo(x+i*5-4,y-21);ctx.lineTo(x+i*5,y-37);ctx.lineTo(x+i*5+4,y-21);ctx.fill()}}else{ctx.beginPath();ctx.arc(x,y-24,12,Math.PI,Math.PI*2);ctx.fill();if(h==='cap')ctx.fillRect(x,y-27,15,5)}}
 function drawShadow(ctx,x,y,j){ctx.save();ctx.globalAlpha=.22*(1-j/70);ctx.fillStyle='#111';ctx.beginPath();ctx.ellipse(x,y+42,18,6,0,0,Math.PI*2);ctx.fill();ctx.restore()}
 function drawStudent(ctx,x,y,a,j,ghost=false){const ap=a||{skin:'#efbd98',shirt:'#3f78a9',pants:'#24313d',bag:'#7a4f33',hair:'short',hairColor:'#251c18'};drawShadow(ctx,x,y,j);y-=j;ctx.save();ctx.globalAlpha=ghost?.38:1;rounded(ctx,x-15,y-4,30,24,6,ap.bag);ctx.fillStyle=ap.skin;ctx.beginPath();ctx.arc(x,y-20,12,0,Math.PI*2);ctx.fill();drawHair(ctx,x,y,ap);drawEyes(ctx,x,y);rounded(ctx,x-12,y-7,24,31,4,ap.shirt);ctx.fillStyle=ap.pants;ctx.fillRect(x-11,y+24,8,20);ctx.fillRect(x+3,y+24,8,20);ctx.strokeStyle=ap.skin;ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(x-11,y);ctx.lineTo(x-19,y+14);ctx.moveTo(x+11,y);ctx.lineTo(x+19,y+14);ctx.stroke();if(ghost){ctx.globalAlpha=.9;ctx.font='21px sans-serif';ctx.fillText('👻',x-11,y-46)}ctx.restore()}
+
+function drawPoliceBaton(ctx,p,x,y,j){
+ if(!p||p.ghost)return;
+ let a=p.angle||0;
+ // 내 경찰이 공격 중이면 실제 휘두름 애니메이션을 보여준다.
+ if(p.id===meId&&myRole==='police'&&swingT>0){
+   const prog=1-swingT/.22;
+   a+=-1.05+prog*2.0;
+ }
+ ctx.save();
+ ctx.translate(x,y-j);
+ ctx.rotate(a);
+ // 손잡이
+ ctx.fillStyle='#0f151b';ctx.fillRect(9,-7,25,14);
+ // 경찰봉 본체
+ ctx.fillStyle='#27323c';ctx.fillRect(31,-5,62,10);
+ ctx.fillStyle='#66717c';ctx.fillRect(34,-2,48,3);
+ // 끝 캡
+ ctx.fillStyle='#0a0e12';ctx.fillRect(88,-7,11,14);
+ ctx.restore();
+}
 function drawPolice(ctx,x,y,j,ghost=false){drawShadow(ctx,x,y,j);y-=j;ctx.save();ctx.globalAlpha=ghost?.38:1;ctx.fillStyle='#efbd98';ctx.beginPath();ctx.arc(x,y-20,12,0,Math.PI*2);ctx.fill();ctx.fillStyle='#263b50';ctx.beginPath();ctx.arc(x,y-26,11,Math.PI,Math.PI*2);ctx.fill();drawEyes(ctx,x,y);rounded(ctx,x-12,y-7,24,31,4,'#244b78');ctx.fillStyle='#1f2d38';ctx.fillRect(x-11,y+24,8,20);ctx.fillRect(x+3,y+24,8,20);ctx.fillStyle='#f4d03f';ctx.fillRect(x-5,y-33,10,5);if(ghost){ctx.globalAlpha=.9;ctx.font='21px sans-serif';ctx.fillText('👻',x-11,y-46)}ctx.restore()}
 function drawSpy(ctx,x,y,j,ghost=false){drawShadow(ctx,x,y,j);y-=j;ctx.save();ctx.globalAlpha=ghost?.38:1;ctx.fillStyle='#292929';ctx.beginPath();ctx.arc(x,y-20,12,0,Math.PI*2);ctx.fill();drawEyes(ctx,x,y);rounded(ctx,x-12,y-7,24,31,4,'#661f1f');ctx.fillStyle='#222';ctx.fillRect(x-11,y+24,8,20);ctx.fillRect(x+3,y+24,8,20);ctx.fillStyle='#e22';ctx.font='bold 11px sans-serif';ctx.fillText('SPY',x-12,y+10);if(ghost){ctx.globalAlpha=.9;ctx.font='21px sans-serif';ctx.fillText('👻',x-11,y-46)}ctx.restore()}
 function drawBoost(ctx,x,y,p){
@@ -436,8 +466,10 @@ function drawBoost(ctx,x,y,p){
 }
 function drawPerson(ctx,o,opt={}){
  const{x,y}=pos(o),j=jumpOffset(o);
- if(opt.police)drawPolice(ctx,x,y,j,o.ghost);
- else if(opt.revealed)drawSpy(ctx,x,y,j,o.ghost);
+ if(opt.police){
+  drawPolice(ctx,x,y,j,o.ghost);
+  drawPoliceBaton(ctx,o,x,y,j);
+ }else if(opt.revealed)drawSpy(ctx,x,y,j,o.ghost);
  else drawStudent(ctx,x,y,o.appearance,j,o.ghost);
  drawBoost(ctx,x,y,o);
  if(opt.name){
@@ -573,6 +605,43 @@ function drawPlayground(ctx){
  ctx.strokeStyle='#444';ctx.lineWidth=4;for(const sx of [310,365]){ctx.beginPath();ctx.moveTo(sx,700);ctx.lineTo(sx,805);ctx.moveTo(sx+28,700);ctx.lineTo(sx+28,805);ctx.stroke();ctx.fillStyle='#d65b55';ctx.fillRect(sx-3,800,35,12)}
  ctx.strokeStyle='#9a7d50';ctx.lineWidth=9;ctx.strokeRect(105,880,350,22);
 }
+
+function drawTree3D(ctx,t){
+ const x=t.x,y=t.y,r=t.r;
+ ctx.save();
+
+ // 넓은 땅 그림자
+ ctx.fillStyle='rgba(0,0,0,.20)';
+ ctx.beginPath();ctx.ellipse(x+12,y+28,r*.92,r*.38,0,0,Math.PI*2);ctx.fill();
+
+ // 입체적인 줄기
+ ctx.fillStyle='#5b3825';
+ ctx.fillRect(x-13,y-22,28,78);
+ ctx.fillStyle='#8d5c38';
+ ctx.fillRect(x-9,y-20,10,74);
+ ctx.fillStyle='#3e291e';
+ ctx.fillRect(x+6,y-19,7,72);
+
+ // 여러 겹의 수관
+ const crown=[
+  [-r*.42,-r*.72,r*.62,'#367443'],
+  [ r*.38,-r*.68,r*.66,'#2f6a3e'],
+  [0,-r*.96,r*.72,'#4b8d4e'],
+  [-r*.05,-r*.43,r*.76,'#3f8246']
+ ];
+ for(const [ox,oy,cr,col] of crown){
+   ctx.fillStyle=col;ctx.beginPath();ctx.arc(x+ox,y+oy,cr,0,Math.PI*2);ctx.fill();
+ }
+ ctx.fillStyle='rgba(255,255,255,.15)';
+ ctx.beginPath();ctx.arc(x-r*.22,y-r*.94,r*.28,0,Math.PI*2);ctx.fill();
+
+ // 바닥에 작은 테두리: 실제 충돌영역을 시각적으로 암시
+ ctx.strokeStyle='rgba(71,55,37,.28)';ctx.lineWidth=4;
+ ctx.beginPath();ctx.ellipse(x,y+28,r*.88,r*.34,0,0,Math.PI*2);ctx.stroke();
+
+ ctx.restore();
+}
+
 function drawYard(ctx){
  const sky=ctx.createLinearGradient(0,0,0,MAP.h);sky.addColorStop(0,'#ccebf7');sky.addColorStop(.22,'#e9f5e7');sky.addColorStop(.23,'#78ad65');sky.addColorStop(1,'#5e984c');ctx.fillStyle=sky;ctx.fillRect(0,0,MAP.w,MAP.h);
 
@@ -609,8 +678,8 @@ function drawYard(ctx){
  for(const r of FENCES)drawFenceRect(ctx,r);
  ctx.fillStyle='#fff';ctx.font='bold 22px sans-serif';ctx.fillText('농구장 · 울타리는 점프로 넘을 수 있어요',250,1090);
 
- // 나무와 벤치
- for(let i=0;i<9;i++){const x=180+i*340;ctx.fillStyle='#7d5637';ctx.fillRect(x,760,24,82);ctx.fillStyle='#397f48';ctx.beginPath();ctx.arc(x+12,730,58,0,Math.PI*2);ctx.fill()}
+ // 나무와 벤치: 그림과 충돌 좌표가 동일
+ for(const t of TREE_OBSTACLES)drawTree3D(ctx,t);
  rounded(ctx,180,900,330,36,7,'#956b42','#694a30');rounded(ctx,560,900,330,36,7,'#956b42','#694a30');
  ctx.fillStyle='#fff';ctx.font='bold 40px sans-serif';ctx.fillText('운동장',1440,570);
 }
@@ -667,12 +736,6 @@ function drawPlayerView(){
  for(const q of Object.values(players).filter(q=>q.floor===p.floor)){
   drawPerson(g,q,{police:q.role==='police',revealed:q.revealed,name:myRole&&q.role===myRole&&currentPhase==='reveal'?q.nick:(myRole==='spy'&&q.role==='spy'&&q.alive?q.nick:'')});bubble(g,q)
  }
- if(myRole==='police'&&p.alive&&currentPhase==='playing'){const j=jumpOffset(p);g.save();g.translate(p.x,p.y-j);let a=p.angle||angle;if(swingT>0){const prog=1-swingT/.22;a+=-1.05+prog*2}g.rotate(a);
-  g.fillStyle='#111820';g.fillRect(10,-6,23,12);
-  g.fillStyle='#2c3440';g.fillRect(31,-5,58,10);
-  g.fillStyle='#0f141a';g.fillRect(84,-7,10,14);
-  g.fillStyle='#69727d';g.fillRect(34,-2,46,3);
-  g.restore()}
  g.restore();
 
  $('floorHud').textContent=p.floor===0?'운동장':`${p.floor}층`;
