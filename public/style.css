@@ -218,3 +218,22 @@ button,input{font:inherit}button{cursor:pointer}
   font-size:24px;
  }
 }
+
+/* v30: prevent accidental browser gestures during gameplay */
+#playerGame,
+#playerGame canvas,
+#joystickBase,
+#jumpBtn,
+#attackBtn,
+#boostBtn{
+ touch-action:none!important;
+ -ms-touch-action:none!important;
+ -webkit-user-select:none!important;
+ user-select:none!important;
+ -webkit-touch-callout:none!important;
+}
+#boostBtn:disabled{
+ opacity:.72;
+ filter:grayscale(.25);
+ cursor:default;
+}

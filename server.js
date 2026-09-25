@@ -76,7 +76,7 @@ function makeNPC(i,area){
 function playerView(p){
  return{
   id:p.id,nick:p.nick,role:p.role,alive:p.alive,ghost:p.ghost,revealed:p.revealed,miss:p.miss,
-  x:p.x,y:p.y,floor:p.floor,angle:p.angle,boostUsed:p.boostUsed,boostUntil:p.boostUntil,
+  x:p.x,y:p.y,floor:p.floor,angle:p.angle,boostCharges:p.boostCharges||0,boostUntil:p.boostUntil,
   bubble:p.bubble,bubbleUntil:p.bubbleUntil,jumpStart:p.jumpStart||0,jumpUntil:p.jumpUntil||0,
   appearance:p.appearance,connected:p.connected,score:p.score||0
  };
@@ -266,7 +266,7 @@ function prepareRound(r){
  const shuffled=[...list].sort(()=>Math.random()-.5);
  shuffled.forEach((p,i)=>{
   p.role=i<r.spies?'spy':'police';p.alive=true;p.ghost=false;p.revealed=false;p.miss=0;
-  p.boostUsed=false;p.boostUntil=0;p.bubble='';p.bubbleUntil=0;p.jumpStart=0;p.jumpUntil=0;
+  p.boostCharges=0;p.boostUntil=0;p.bubble='';p.bubbleUntil=0;p.jumpStart=0;p.jumpUntil=0;
   Object.assign(p,spawn(i%2));
  });
  distributeNPCs(r);
@@ -384,7 +384,7 @@ io.on('connection',socket=>{
   if([...r.players.values()].some(p=>p.nick===nick))return cb?.({ok:false,error:'이미 사용 중인 닉네임입니다.'});
   const s=spawn(1),id=crypto.randomUUID(),token=crypto.randomUUID();
   const p={id,socketId:socket.id,reconnectToken:token,nick,role:null,alive:true,ghost:false,revealed:false,miss:0,
-   x:s.x,y:s.y,floor:1,angle:0,boostUsed:false,boostUntil:0,bubble:'',bubbleUntil:0,jumpStart:0,jumpUntil:0,
+   x:s.x,y:s.y,floor:1,angle:0,boostCharges:0,boostUntil:0,bubble:'',bubbleUntil:0,jumpStart:0,jumpUntil:0,
    appearance:randomAppearance(gender),lastChatAt:0,connected:true,score:0};
   r.players.set(id,p);socket.join(r.code);socket.data.room=r.code;socket.data.playerId=id;socket.data.teacher=false;
   cb?.({ok:true,id,reconnectToken:token,roomCode:r.code,nick:p.nick,score:p.score,state:state(r)});
@@ -494,14 +494,41 @@ io.on('connection',socket=>{
 
  socket.on('pickupFish',({fishId})=>{
   const r=rooms.get(socket.data.room),p=r?.players.get(socket.data.playerId);
-  if(!r||!p||r.phase!=='playing'||!p.alive||p.role!=='spy'||p.boostUsed)return;
+  if(!r||!p||r.phase!=='playing'||!p.alive||!['spy','police'].includes(p.role))return;
   if(!r.fishExpireAt||Date.now()>r.fishExpireAt)return;
   const fish=r.fishItems.find(f=>f.id===String(fishId||'')&&f.active);
   if(!fish||fish.floor!==p.floor||Math.hypot(fish.x-p.x,fish.y-p.y)>90)return;
-  fish.active=false;p.boostUsed=true;p.boostUntil=Date.now()+10000;
-  p.bubble='붕어빵 파워!';p.bubbleUntil=p.boostUntil;
-  io.to(r.code).emit('fishTaken',{fishId:fish.id,playerId:p.id,nick:p.nick});
-  io.to(r.code).emit('boosted',{id:p.id,until:p.boostUntil,text:p.bubble,bubbleUntil:p.bubbleUntil});
+
+  fish.active=false;
+  p.boostCharges=(p.boostCharges||0)+1;
+  p.bubble=`붕어빵 +1! (보유 ${p.boostCharges})`;
+  p.bubbleUntil=Date.now()+1800;
+
+  io.to(r.code).emit('fishTaken',{
+    fishId:fish.id,playerId:p.id,nick:p.nick,charges:p.boostCharges,
+    text:p.bubble,bubbleUntil:p.bubbleUntil
+  });
+  pushState(r);
+ });
+
+ socket.on('useFishBoost',()=>{
+  const r=rooms.get(socket.data.room),p=r?.players.get(socket.data.playerId);
+  if(!r||!p||r.phase!=='playing'||!p.alive||!['spy','police'].includes(p.role))return;
+  if((p.boostCharges||0)<=0)return;
+  // 이미 부스터가 켜져 있으면 횟수를 낭비하지 않도록 새 사용을 막는다.
+  if(Date.now()<(p.boostUntil||0)){
+    if(p.socketId)io.to(p.socketId).emit('boostUnavailable',{reason:'부스터가 이미 사용 중입니다.'});
+    return;
+  }
+  p.boostCharges--;
+  p.boostUntil=Date.now()+10000;
+  p.bubble='붕어빵 부스터!';
+  p.bubbleUntil=Date.now()+1800;
+
+  io.to(r.code).emit('boosted',{
+    id:p.id,until:p.boostUntil,charges:p.boostCharges,
+    text:p.bubble,bubbleUntil:p.bubbleUntil
+  });
   pushState(r);
  });
 

@@ -1,7 +1,7 @@
 const socket=io();
 const MAP={w:3200,h:2000},SPEED=240;
 let mode=null,roomCode='',meId=null,myRole=null,teammates=[],players={},npcs=[],started=false,timeLeft=0,totalTime=1,currentPhase='lobby';
-let selectedTeacherFloor=1,keys={},angle=0,boostUntil=0,swingT=0,last=performance.now(),cam={x:0,y:0},joy={pointerId:null,dx:0,dy:0};
+let selectedTeacherFloor=1,keys={},angle=0,boostUntil=0,swingT=0,last=performance.now(),cam={x:0,y:0},joy={pointerId:null,touchId:null,dx:0,dy:0};
 let latestScores=[],pendingJoin=null,revealCountdown=null,feed=[],teacherZoom=1,teacherPan={x:0,y:0},teacherDrag=null,localPortalCooldown=0;
 let fishItems=[],fishExpireAt=0,fishPickupPending=false;
 const $=id=>document.getElementById(id),gameCanvas=$('gameCanvas'),g=gameCanvas.getContext('2d'),teacherCanvas=$('teacherCanvas'),tg=teacherCanvas.getContext('2d');
@@ -191,10 +191,26 @@ socket.on('fishSpawned',e=>{
 });
 socket.on('fishTaken',e=>{
  const f=fishItems.find(x=>x.id===e.fishId);if(f)f.active=false;
- if(e.playerId===meId){fishPickupPending=false;toast('🐟 붕어빵 파워! 10초 부스터!')}
+ if(players[e.playerId]){
+   players[e.playerId].boostCharges=e.charges??players[e.playerId].boostCharges??0;
+   players[e.playerId].bubble=e.text||players[e.playerId].bubble;
+   players[e.playerId].bubbleUntil=e.bubbleUntil||players[e.playerId].bubbleUntil;
+ }
+ if(e.playerId===meId){
+   fishPickupPending=false;
+   toast(`🐟 붕어빵 획득! 부스터 ${e.charges||1}회 보유`);
+ }
 });
 socket.on('fishExpired',()=>{fishItems=[];fishExpireAt=0;fishPickupPending=false});
-socket.on('boosted',e=>{if(players[e.id]){players[e.id].boostUntil=e.until;players[e.id].boostUsed=true;players[e.id].bubble=e.text;players[e.id].bubbleUntil=e.bubbleUntil}if(e.id===meId){boostUntil=e.until;toast('🚀 부스터 10초!')}});
+socket.on('boosted',e=>{
+ if(players[e.id]){
+   players[e.id].boostUntil=e.until;
+   players[e.id].boostCharges=e.charges??players[e.id].boostCharges??0;
+   players[e.id].bubble=e.text;players[e.id].bubbleUntil=e.bubbleUntil;
+ }
+ if(e.id===meId){boostUntil=e.until;toast(`🚀 부스터 10초! 남은 횟수 ${e.charges||0}회`)}
+});
+socket.on('boostUnavailable',e=>toast(e?.reason||'지금은 부스터를 사용할 수 없습니다.'));
 socket.on('gameEnded',e=>showEnd(e));
 
 socket.on('gameForceEnded',e=>{
@@ -222,10 +238,28 @@ function showEnd(e){
  $('teacherEndActions').style.display=mode==='teacher'?'flex':'none';$('studentEndWait').style.display=mode==='student'?'block':'none';updateScoreUI();showScreen('endScreen',true);sceneSound('end');
 }
 
-$('attackBtn').addEventListener('pointerdown',e=>{e.preventDefault();attack()});
+function bindActionButton(el,fn){
+ // Touch Events are used directly on tablets so a second finger does not
+ // steal/cancel the joystick pointer. Pointer Events remain for mouse/pen.
+ el.addEventListener('touchstart',e=>{
+   e.preventDefault();e.stopPropagation();fn();
+ },{passive:false});
+ el.addEventListener('pointerdown',e=>{
+   if(e.pointerType==='touch')return;
+   e.preventDefault();fn();
+ });
+}
+bindActionButton($('attackBtn'),attack);
 function attack(){if(currentPhase!=='playing'||myRole!=='police'||!players[meId]?.alive)return;swingT=.22;socket.emit('hitAttempt')}
-$('jumpBtn').addEventListener('pointerdown',e=>{e.preventDefault();jump()});
+bindActionButton($('jumpBtn'),jump);
 function jump(){if(!['lobby','playing'].includes(currentPhase)||!players[meId])return;const p=players[meId],now=Date.now();if((p.jumpUntil||0)>now)return;p.jumpStart=now;p.jumpUntil=now+650;socket.emit('jump')}
+bindActionButton($('boostBtn'),useStoredBoost);
+function useStoredBoost(){
+ const p=players[meId];
+ if(currentPhase!=='playing'||!p?.alive||(p.boostCharges||0)<=0)return;
+ if(Date.now()<(p.boostUntil||0)){toast('🚀 부스터가 이미 사용 중입니다.');return}
+ socket.emit('useFishBoost');
+}
 
 $('chatToggle').onclick=()=>$('chatMenu').classList.toggle('open');
 document.querySelectorAll('#chatMenu [data-msg]').forEach(b=>b.onclick=()=>{sendChat(b.dataset.msg);$('chatMenu').classList.remove('open')});
@@ -237,18 +271,79 @@ addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
 
 (function setupJoystick(){
  const base=$('joystickBase'),knob=$('joystickKnob');
- function setFrom(e){
+
+ function setXY(clientX,clientY){
    const r=base.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
-   let dx=e.clientX-cx,dy=e.clientY-cy,d=Math.hypot(dx,dy),max=r.width*.35;
+   let dx=clientX-cx,dy=clientY-cy,d=Math.hypot(dx,dy),max=r.width*.35;
    if(d>max){dx=dx/d*max;dy=dy/d*max}
    joy.dx=dx/max;joy.dy=dy/max;knob.style.transform=`translate(${dx}px,${dy}px)`;
  }
+ function resetJoy(){
+   joy.pointerId=null;joy.touchId=null;joy.dx=joy.dy=0;knob.style.transform='translate(0,0)';
+ }
+
+ // Tablets/phones: bind the joystick to ONE touch identifier only.
+ // Other fingers remain free for jump, attack and boost.
+ base.addEventListener('touchstart',e=>{
+   e.preventDefault();e.stopPropagation();
+   if(joy.touchId!==null)return;
+   const t=e.changedTouches[0];if(!t)return;
+   joy.touchId=t.identifier;setXY(t.clientX,t.clientY);
+ },{passive:false});
+
+ base.addEventListener('touchmove',e=>{
+   if(joy.touchId===null)return;
+   const t=[...e.touches].find(t=>t.identifier===joy.touchId);
+   if(!t)return;
+   e.preventDefault();setXY(t.clientX,t.clientY);
+ },{passive:false});
+
+ function endTouch(e){
+   if(joy.touchId===null)return;
+   const ended=[...e.changedTouches].some(t=>t.identifier===joy.touchId);
+   if(ended){e.preventDefault();resetJoy()}
+ }
+ base.addEventListener('touchend',endTouch,{passive:false});
+ base.addEventListener('touchcancel',endTouch,{passive:false});
+
+ // Mouse/pen fallback.
  base.addEventListener('pointerdown',e=>{
-   e.preventDefault();if(joy.pointerId!==null)return;joy.pointerId=e.pointerId;base.setPointerCapture(e.pointerId);setFrom(e);
+   if(e.pointerType==='touch')return;
+   e.preventDefault();if(joy.pointerId!==null)return;
+   joy.pointerId=e.pointerId;base.setPointerCapture(e.pointerId);setXY(e.clientX,e.clientY);
  });
- base.addEventListener('pointermove',e=>{if(e.pointerId!==joy.pointerId)return;e.preventDefault();setFrom(e)});
- function end(e){if(e.pointerId!==joy.pointerId)return;e.preventDefault();joy.pointerId=null;joy.dx=joy.dy=0;knob.style.transform='translate(0,0)'}
- base.addEventListener('pointerup',end);base.addEventListener('pointercancel',end);base.addEventListener('lostpointercapture',e=>{if(e.pointerId===joy.pointerId){joy.pointerId=null;joy.dx=joy.dy=0;knob.style.transform='translate(0,0)'}});
+ base.addEventListener('pointermove',e=>{
+   if(e.pointerType==='touch'||e.pointerId!==joy.pointerId)return;
+   e.preventDefault();setXY(e.clientX,e.clientY)
+ });
+ function endPointer(e){
+   if(e.pointerType==='touch'||e.pointerId!==joy.pointerId)return;
+   e.preventDefault();resetJoy()
+ }
+ base.addEventListener('pointerup',endPointer);
+ base.addEventListener('pointercancel',endPointer);
+})();
+
+
+(function preventGameplayPinchZoom(){
+ const pg=$('playerGame');
+ const mapOpen=()=>Boolean($('studentMapModal')?.classList.contains('open'));
+
+ // Prevent page scrolling/pinch while playing. Individual controls still
+ // receive their own touchstart first, so simultaneous jump/joystick works.
+ pg.addEventListener('touchmove',e=>{
+   if(!mapOpen())e.preventDefault();
+ },{passive:false});
+ pg.addEventListener('touchstart',e=>{
+   if(!mapOpen()&&e.touches.length>1)e.preventDefault();
+ },{passive:false});
+
+ // Safari-specific pinch gesture events.
+ ['gesturestart','gesturechange','gestureend'].forEach(type=>{
+   document.addEventListener(type,e=>{
+     if(mode==='student'&&$('playerGame')?.style.display!=='none'&&!mapOpen())e.preventDefault();
+   },{passive:false});
+ });
 })();
 
 function jumpOffset(o){const now=Date.now(),s=o?.jumpStart||0,e=o?.jumpUntil||0;if(now<s||now>e||e<=s)return 0;return Math.sin(Math.PI*((now-s)/(e-s)))*40}
@@ -559,9 +654,9 @@ function drawFishItems(ctx,floor){
 }
 function tryPickupNearbyFish(){
  const p=players[meId];
- if(!p||p.role!=='spy'||!p.alive||p.boostUsed||fishPickupPending||!fishExpireAt||Date.now()>fishExpireAt)return;
+ if(!p||!['spy','police'].includes(p.role)||!p.alive||fishPickupPending||!fishExpireAt||Date.now()>fishExpireAt)return;
  const f=fishItems.find(x=>x.active&&x.floor===p.floor&&Math.hypot(x.x-p.x,x.y-p.y)<=75);
- if(f){fishPickupPending=true;socket.emit('pickupFish',{fishId:f.id});setTimeout(()=>fishPickupPending=false,450)}
+ if(f){fishPickupPending=true;socket.emit('pickupFish',{fishId:f.id});setTimeout(()=>fishPickupPending=false,350)}
 }
 
 function drawPlayerView(){
@@ -585,8 +680,17 @@ function drawPlayerView(){
  if(currentPhase==='lobby'){$('roleHud').textContent='대기 중';$('timerHud').textContent='친구 기다리는 중';$('spyHud').textContent='';$('attackBtn').style.display='none';$('boostBtn').style.display='none';$('jumpBtn').style.display='block'}
  else if(currentPhase==='playing'){
   $('timerHud').textContent=fmt(timeLeft);$('spyHud').textContent=`스파이 ${Object.values(players).filter(x=>x.role==='spy'&&x.alive).length}`;
-  if(myRole==='police'){$('roleHud').textContent=`🚔 ${'❤️'.repeat(Math.max(0,3-(p.miss||0)))}${'🖤'.repeat(Math.min(3,p.miss||0))}`;$('attackBtn').style.display='block';$('boostBtn').style.display='none'}
-  else{$('roleHud').textContent=p.ghost?'🕵️👻 유령':'🕵️ 스파이';$('attackBtn').style.display='none';$('boostBtn').style.display='none'}
+  if(myRole==='police'){$('roleHud').textContent=`🚔 ${'❤️'.repeat(Math.max(0,3-(p.miss||0)))}${'🖤'.repeat(Math.min(3,p.miss||0))}`;$('attackBtn').style.display='block'}
+  else{$('roleHud').textContent=p.ghost?'🕵️👻 유령':'🕵️ 스파이';$('attackBtn').style.display='none'}
+
+  const charges=p.boostCharges||0,activeBoost=Date.now()<(p.boostUntil||0);
+  if(p.alive&&charges>0){
+    $('boostBtn').style.display='block';
+    $('boostBtn').disabled=activeBoost;
+    $('boostBtn').innerHTML=activeBoost?`🚀<small>사용 중 · ×${charges}</small>`:`🚀<small>부스터 ×${charges}</small>`;
+  }else{
+    $('boostBtn').style.display='none';$('boostBtn').disabled=false;
+  }
  }
 }
 
