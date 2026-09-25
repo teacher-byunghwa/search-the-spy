@@ -523,11 +523,26 @@ io.on('connection',socket=>{
   io.to(att.socketId).emit('swingResult',{kind:best?'hit':'miss'});if(!best)return;
 
   if(type==='player'&&best.role==='spy'){
-    best.alive=false;best.ghost=true;best.revealed=true;best.bubble='정체가 들켰다!';best.bubbleUntil=Date.now()+1800;att.miss=0;
-    io.to(r.code).emit('spyCaught',{spyId:best.id,by:att.id,spyNick:best.nick,policeNick:att.nick,policeMissReset:true});
-    io.to(r.code).emit('chatFeed',{kind:'death',nick:best.nick,text:'스파이가 잡혀 탈락했습니다.'});
-    io.to(att.socketId).emit('lifeReset',{miss:0});
-    const left=[...r.players.values()].filter(p=>p.role==='spy'&&p.alive).length;if(left===0)finish(r,'police','모든 스파이를 검거했습니다.');
+    best.spyHits=(best.spyHits||0)+1;
+    best.revealed=true;
+    const lives=Math.max(0,2-best.spyHits);
+
+    if(best.spyHits>=2){
+      best.alive=false;best.ghost=true;best.bubble='두 번째 타격! 스파이 탈락!';best.bubbleUntil=Date.now()+1800;
+      att.miss=0;
+      io.to(r.code).emit('spyHit',{targetId:best.id,by:att.id,hits:best.spyHits,lives:0,out:true});
+      io.to(r.code).emit('spyCaught',{spyId:best.id,by:att.id,spyNick:best.nick,policeNick:att.nick,policeMissReset:true});
+      io.to(r.code).emit('chatFeed',{kind:'death',nick:best.nick,text:'스파이가 두 번 맞아 탈락했습니다.'});
+      io.to(att.socketId).emit('lifeReset',{miss:0});
+      io.to(att.socketId).emit('spyHitConfirm',{out:true,message:'스파이를 잡았습니다!'});
+      const left=[...r.players.values()].filter(p=>p.role==='spy'&&p.alive).length;
+      if(left===0)finish(r,'police','모든 스파이를 검거했습니다.');
+    }else{
+      best.bubble='한 번 맞았어요! ❤️';best.bubbleUntil=Date.now()+1600;
+      io.to(r.code).emit('spyHit',{targetId:best.id,by:att.id,hits:best.spyHits,lives,bubble:best.bubble,bubbleUntil:best.bubbleUntil,out:false});
+      io.to(att.socketId).emit('spyHitConfirm',{out:false,message:'스파이를 맞췄습니다! 한 번 더 맞히면 탈락합니다.'});
+      pushState(r);
+    }
   }else{
     att.miss++;if(att.socketId)io.to(att.socketId).emit('policeLifeUpdated',{miss:att.miss,lives:Math.max(0,3-att.miss)});
     const text=choice(['윽! 왜 때려?','나 학생이야!','아야! 억울해!','저 아니라고요!','왜 저를 쳐요?!']);

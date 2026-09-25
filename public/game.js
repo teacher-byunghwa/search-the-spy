@@ -164,6 +164,24 @@ socket.on('teacherGameStarted',s=>{if(mode!=='teacher')return;applyState(s);npcs
 socket.on('teacherState',s=>{if(mode==='teacher'){applyState(s);npcs=s.npcs||[]}});
 socket.on('gameStarted',()=>{currentPhase='playing';started=true;hideRevealAndGo();$('lobbyNotice').style.display='none'});
 socket.on('swingResult',r=>{whoosh();if(r.kind==='hit')setTimeout(thump,35)});
+
+socket.on('spyHit',e=>{
+ const p=players[e.targetId];
+ if(p){
+   p.spyHits=e.hits||0;
+   p.spyLives=e.lives;
+   p.revealed=true;
+   if(e.bubble){p.bubble=e.bubble;p.bubbleUntil=e.bubbleUntil||Date.now()+1600}
+   if(e.out){p.alive=false;p.ghost=true}
+ }
+ if(e.targetId===meId){
+   if(e.out)toast('💥 두 번째 타격! 스파이 탈락!');
+   else toast('❤️ 한 번 맞았습니다. 목숨 1개 남음!');
+ }
+});
+socket.on('spyHitConfirm',e=>{
+ toast(e?.message||(e?.out?'스파이를 잡았습니다!':'스파이를 맞췄습니다!'));
+});
 socket.on('wrongHit',e=>{const t=e.type==='npc'?npcs.find(n=>n.id===e.targetId):players[e.targetId];if(t){t.bubble=e.text;t.bubbleUntil=Date.now()+1800}if(e.by===meId){
  if(players[meId])players[meId].miss=e.miss;
  $('roleHud').textContent=`🚔 ${'❤️'.repeat(Math.max(0,3-e.miss))}${'🖤'.repeat(Math.min(3,e.miss))}`;
@@ -744,7 +762,11 @@ function drawPlayerView(){
  else if(currentPhase==='playing'){
   $('timerHud').textContent=fmt(timeLeft);$('spyHud').textContent=`스파이 ${Object.values(players).filter(x=>x.role==='spy'&&x.alive).length}`;
   if(myRole==='police'){$('roleHud').textContent=`🚔 ${'❤️'.repeat(Math.max(0,3-(p.miss||0)))}${'🖤'.repeat(Math.min(3,p.miss||0))}`;$('attackBtn').style.display='block'}
-  else{$('roleHud').textContent=p.ghost?'🕵️👻 유령':'🕵️ 스파이';$('attackBtn').style.display='none'}
+  else{
+   const spyLives=Math.max(0,2-(p.spyHits||0));
+   $('roleHud').textContent=p.ghost?'🕵️👻 유령':`🕵️ 스파이 ${'❤️'.repeat(spyLives)}${'🖤'.repeat(2-spyLives)}`;
+   $('attackBtn').style.display='none'
+  }
 
   const charges=p.boostCharges||0,activeBoost=Date.now()<(p.boostUntil||0);
   if(p.alive&&charges>0){
