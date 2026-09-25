@@ -176,6 +176,47 @@ function safeMove(p,nx,ny){
  return moved;
 }
 
+function safeSpawn(floor,preferred=null){
+ // 스폰 직후 나무/벽/놀이터/울타리에 끼이지 않도록 충분한 여유를 둔다.
+ const candidates=[];
+ if(preferred)candidates.push(preferred);
+
+ if(floor===0){
+  candidates.push(
+   {x:1300,y:820},{x:1600,y:820},{x:1900,y:820},
+   {x:1350,y:1050},{x:1600,y:1050},{x:1850,y:1050},
+   {x:1350,y:1350},{x:1600,y:1350},{x:1850,y:1350},
+   {x:1200,y:1550},{x:1600,y:1550},{x:2000,y:1550}
+  );
+ }else{
+  candidates.push(
+   {x:700,y:780},{x:1100,y:920},{x:1600,y:780},
+   {x:2100,y:920},{x:2550,y:780},{x:900,y:1180},
+   {x:1600,y:1180},{x:2350,y:1180},
+   {x:700,y:1820},{x:1600,y:1820},{x:2500,y:1820}
+  );
+ }
+
+ // 후보를 섞어서 여러 명이 같은 곳에 몰리지 않게 한다.
+ for(let i=candidates.length-1;i>0;i--){
+  const j=Math.floor(Math.random()*(i+1));
+  [candidates[i],candidates[j]]=[candidates[j],candidates[i]];
+ }
+
+ for(const c of candidates){
+  if(!isBlocked(floor,c.x,c.y,false))return {x:c.x,y:c.y,floor};
+ }
+
+ // 최후 fallback: 랜덤 탐색
+ for(let i=0;i<80;i++){
+  const x=100+Math.random()*(MAP.w-200);
+  const y=420+Math.random()*(MAP.h-520);
+  if(!isBlocked(floor,x,y,false))return {x,y,floor};
+ }
+ return {x:1600,y:1000,floor};
+}
+
+
 function finish(r,winner,reason){
  if(r.phase==='ended')return;
  r.phase='ended';clearLoops(r);
@@ -276,7 +317,7 @@ function prepareRound(r){
  shuffled.forEach((p,i)=>{
   p.role=i<r.spies?'spy':'police';p.alive=true;p.ghost=false;p.revealed=false;p.miss=0;
   p.boostCharges=0;p.boostUntil=0;p.bubble='';p.bubbleUntil=0;p.jumpStart=0;p.jumpUntil=0;
-  Object.assign(p,spawn(i%2));
+  Object.assign(p,safeSpawn(i%2));
  });
  distributeNPCs(r);
  r.timeLeft=r.minutes*60;r.phase='reveal';r.lastTick=Date.now();r.spiesRevealed=false;r.fishItems=[];r.fishExpireAt=0;
