@@ -328,9 +328,14 @@ function drawBoost(ctx,x,y,p){
 }
 function drawPerson(ctx,o,opt={}){
  const{x,y}=pos(o),j=jumpOffset(o);
- if(opt.police)drawPolice(ctx,x,y,j,o.ghost);else if(opt.revealed)drawSpy(ctx,x,y,j,o.ghost);else drawStudent(ctx,x,y,o.appearance,j,o.ghost);
+ if(opt.police)drawPolice(ctx,x,y,j,o.ghost);
+ else if(opt.revealed)drawSpy(ctx,x,y,j,o.ghost);
+ else drawStudent(ctx,x,y,o.appearance,j,o.ghost);
  drawBoost(ctx,x,y,o);
- if(opt.name){ctx.save();ctx.fillStyle='#172228';ctx.font='bold 13px sans-serif';ctx.textAlign='center';ctx.fillText(opt.name,x,y-j-50);ctx.restore()}
+ if(opt.name){
+  ctx.save();ctx.fillStyle='#172228';ctx.font='bold 13px sans-serif';ctx.textAlign='center';
+  ctx.fillText(opt.name,x,y-j-50);ctx.restore();
+ }
 }
 function bubble(ctx,o){if(!o?.bubble||o.bubbleUntil<Date.now())return;const{x,y}=pos(o),j=jumpOffset(o),yy=y-j;ctx.font='bold 13px sans-serif';const w=ctx.measureText(o.bubble).width+18;ctx.fillStyle='#fff';ctx.strokeStyle='#26343d';ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(x-w/2,yy-80,w,30,8);ctx.fill();ctx.stroke();ctx.fillStyle='#222';ctx.fillText(o.bubble,x-w/2+9,yy-59)}
 
@@ -562,7 +567,7 @@ function drawPlayerView(){
  else if(currentPhase==='playing'){
   $('timerHud').textContent=fmt(timeLeft);$('spyHud').textContent=`스파이 ${Object.values(players).filter(x=>x.role==='spy'&&x.alive).length}`;
   if(myRole==='police'){$('roleHud').textContent=`🚔 ${'❤️'.repeat(Math.max(0,3-(p.miss||0)))}${'🖤'.repeat(Math.min(3,p.miss||0))}`;$('attackBtn').style.display='block';$('boostBtn').style.display='none'}
-  else{$('roleHud').textContent=p.ghost?'🕵️👻 유령':'🕵️ 스파이';$('attackBtn').style.display='none';$('boostBtn').style.display=(p.alive&&timeLeft<=totalTime/2&&!p.boostUsed)?'block':'none'}
+  else{$('roleHud').textContent=p.ghost?'🕵️👻 유령':'🕵️ 스파이';$('attackBtn').style.display='none';$('boostBtn').style.display='none'}
  }
 }
 
