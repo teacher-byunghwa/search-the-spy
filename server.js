@@ -8,7 +8,14 @@ const app=express();
 app.set('trust proxy',1);
 const server=http.createServer(app);
 const io=new Server(server,{cors:{origin:'*'},pingInterval:10000,pingTimeout:30000});
-app.use(express.static('public'));
+app.use((req,res,next)=>{
+  if(req.path==='/'||req.path.endsWith('.html')||req.path.endsWith('.js')||req.path.endsWith('.css')){
+    res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma','no-cache');res.set('Expires','0');
+  }
+  next();
+});
+app.use(express.static('public',{etag:false,lastModified:false}));
 app.get('/health',(_,res)=>res.status(200).send('ok'));
 app.get('/api/qr',async(req,res)=>{
   try{
@@ -83,7 +90,7 @@ function lobby(r){
 function state(r){
  return{
   code:r.code,spies:r.spies,minutes:r.minutes,timeLeft:r.timeLeft,total:r.minutes*60,
-  players:[...r.players.values()].map(playerView),phase:r.phase,fishItems:r.fishItems||[],fishExpireAt:r.fishExpireAt||0
+  players:[...r.players.values()].map(playerView),npcs:r.npcs||[],phase:r.phase,fishItems:r.fishItems||[],fishExpireAt:r.fishExpireAt||0
  };
 }
 function scoreBoard(r){
@@ -270,6 +277,7 @@ function prepareRound(r){
    const same=shuffled.filter(x=>x.role===p.role).map(x=>({id:x.id,nick:x.nick}));
    if(p.socketId)io.to(p.socketId).emit('role',{role:p.role,teammates:same});
  }
+ io.to(r.code).emit('npcState',r.npcs.map(n=>({id:n.id,x:n.x,y:n.y,floor:n.floor,bubble:n.bubble,bubbleUntil:n.bubbleUntil,activity:n.activity,jumpStart:n.jumpStart,jumpUntil:n.jumpUntil,appearance:n.appearance})));
  io.to(r.code).emit('teamRevealStarted',{seconds:10});
  io.to(r.teacherId).emit('teacherGameStarted',{...state(r),npcs:r.npcs});
  io.to(r.code).emit('scoreBoard',scoreBoard(r));
@@ -505,6 +513,12 @@ io.on('connection',socket=>{
   cb?.({ok:true});
  });
 
+ socket.on('requestState',()=>{
+  const r=rooms.get(socket.data.room);
+  if(!r)return;
+  socket.emit('state',state(r));
+  socket.emit('npcState',r.npcs.map(n=>({id:n.id,x:n.x,y:n.y,floor:n.floor,bubble:n.bubble,bubbleUntil:n.bubbleUntil,activity:n.activity,jumpStart:n.jumpStart,jumpUntil:n.jumpUntil,appearance:n.appearance})));
+ });
  socket.on('requestNPCs',()=>{const r=rooms.get(socket.data.room);if(r)socket.emit('npcState',r.npcs)});
  socket.on('teacherRequestState',({code})=>{
   const r=rooms.get(String(code||''));if(r&&socket.id===r.teacherId){socket.emit('teacherState',{...state(r),npcs:r.npcs});socket.emit('scoreBoard',scoreBoard(r))}
@@ -519,4 +533,4 @@ io.on('connection',socket=>{
  });
 });
 
-server.listen(process.env.PORT||3000,'0.0.0.0',()=>console.log('Spy School v12 server started'));
+server.listen(process.env.PORT||3000,'0.0.0.0',()=>console.log('Spy School v29 server started'));

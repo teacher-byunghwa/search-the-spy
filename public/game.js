@@ -64,12 +64,17 @@ function addFeed(item){
 }
 
 function applyState(s){
+ const prevPhase=currentPhase;
  currentPhase=s.phase??currentPhase;timeLeft=s.timeLeft??timeLeft;totalTime=s.total??s.minutes*60??totalTime;
  if(Array.isArray(s.fishItems))fishItems=s.fishItems.map(f=>({...f}));fishExpireAt=s.fishExpireAt||0;
+ if(Array.isArray(s.npcs))npcs=s.npcs.map(n=>{const old=npcs.find(x=>x.id===n.id)||{};return{...old,...n,rx:old.rx??n.x,ry:old.ry??n.y}});
  (s.players||[]).forEach(p=>{
   const old=players[p.id]||{};
   players[p.id]={...old,...p,rx:old.rx??p.x,ry:old.ry??p.y};
  });
+ // 이벤트 하나를 놓친 태블릿도 서버의 현재 phase를 기준으로 자동 복구
+ if(currentPhase==='playing'&&prevPhase!=='playing'&&mode==='student'){started=true;hideRevealAndGo();$('lobbyNotice').style.display='none'}
+ if(currentPhase==='lobby'&&mode==='student'){$('lobbyNotice').style.display='block';started=true}
 }
 function applyRoleUI(role,mates=[]){myRole=role;teammates=mates||[]}
 
@@ -314,7 +319,15 @@ function lerpEntities(dt){
 }
 function pos(o){return{x:o.rx??o.x,y:o.ry??o.y}}
 
-function rounded(ctx,x,y,w,h,r,fill,stroke){ctx.beginPath();ctx.roundRect(x,y,w,h,r);if(fill){ctx.fillStyle=fill;ctx.fill()}if(stroke){ctx.strokeStyle=stroke;ctx.stroke()}}
+function roundedPath(ctx,x,y,w,h,r){
+ r=Math.max(0,Math.min(r,Math.abs(w)/2,Math.abs(h)/2));
+ ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);
+ ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);
+ ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);
+ ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);
+ ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();
+}
+function rounded(ctx,x,y,w,h,r,fill,stroke){roundedPath(ctx,x,y,w,h,r);if(fill){ctx.fillStyle=fill;ctx.fill()}if(stroke){ctx.strokeStyle=stroke;ctx.stroke()}}
 function drawEyes(ctx,x,y){ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(x-4,y-19,3.5,0,Math.PI*2);ctx.arc(x+4,y-19,3.5,0,Math.PI*2);ctx.fill();ctx.fillStyle='#121a20';ctx.beginPath();ctx.arc(x-4,y-19,1.7,0,Math.PI*2);ctx.arc(x+4,y-19,1.7,0,Math.PI*2);ctx.fill()}
 function drawHair(ctx,x,y,a){ctx.fillStyle=a?.hairColor||'#2d241e';const h=a?.hair||'short';if(h==='bob'||h==='long'){ctx.beginPath();ctx.arc(x,y-24,13,Math.PI,Math.PI*2);ctx.fill();ctx.fillRect(x-12,y-24,5,h==='long'?27:18);ctx.fillRect(x+7,y-24,5,h==='long'?27:18)}else if(h==='ponytail'){ctx.beginPath();ctx.arc(x,y-24,12,Math.PI,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(x+14,y-20,6,0,Math.PI*2);ctx.fill()}else if(h==='spiky'){for(let i=-2;i<=2;i++){ctx.beginPath();ctx.moveTo(x+i*5-4,y-21);ctx.lineTo(x+i*5,y-37);ctx.lineTo(x+i*5+4,y-21);ctx.fill()}}else{ctx.beginPath();ctx.arc(x,y-24,12,Math.PI,Math.PI*2);ctx.fill();if(h==='cap')ctx.fillRect(x,y-27,15,5)}}
 function drawShadow(ctx,x,y,j){ctx.save();ctx.globalAlpha=.22*(1-j/70);ctx.fillStyle='#111';ctx.beginPath();ctx.ellipse(x,y+42,18,6,0,0,Math.PI*2);ctx.fill();ctx.restore()}
@@ -337,7 +350,7 @@ function drawPerson(ctx,o,opt={}){
   ctx.fillText(opt.name,x,y-j-50);ctx.restore();
  }
 }
-function bubble(ctx,o){if(!o?.bubble||o.bubbleUntil<Date.now())return;const{x,y}=pos(o),j=jumpOffset(o),yy=y-j;ctx.font='bold 13px sans-serif';const w=ctx.measureText(o.bubble).width+18;ctx.fillStyle='#fff';ctx.strokeStyle='#26343d';ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(x-w/2,yy-80,w,30,8);ctx.fill();ctx.stroke();ctx.fillStyle='#222';ctx.fillText(o.bubble,x-w/2+9,yy-59)}
+function bubble(ctx,o){if(!o?.bubble||o.bubbleUntil<Date.now())return;const{x,y}=pos(o),j=jumpOffset(o),yy=y-j;ctx.font='bold 13px sans-serif';const w=ctx.measureText(o.bubble).width+18;ctx.fillStyle='#fff';ctx.strokeStyle='#26343d';ctx.lineWidth=2;roundedPath(ctx,x-w/2,yy-80,w,30,8);ctx.fill();ctx.stroke();ctx.fillStyle='#222';ctx.fillText(o.bubble,x-w/2+9,yy-59)}
 
 function drawClassroom(ctx,x,y,w,h,label,doorSide){
  // 2.5D room body and shadow
@@ -509,8 +522,10 @@ function drawYard(ctx){
 
 function drawArea(ctx,floor){floor===0?drawYard(ctx):drawSchool(ctx,floor)}
 
+let renderErrorShown=false;
 function loop(t){
- const dt=Math.min(.035,(t-last)/1000);last=t;lerpEntities(dt);
+ const dt=Math.min(.035,(t-last)/1000);last=t;
+ try{lerpEntities(dt);
  if(started&&mode==='student'&&players[meId]){
   const p=players[meId];let dx=0,dy=0;
   if(keys.w||keys.arrowup)dy--;if(keys.s||keys.arrowdown)dy++;if(keys.a||keys.arrowleft)dx--;if(keys.d||keys.arrowright)dx++;
@@ -524,6 +539,10 @@ function loop(t){
   tryPickupNearbyFish();if(swingT>0)swingT-=dt;drawPlayerView();if($('studentMapModal')?.classList.contains('open'))drawStudentOverviewMap();
  }
  if(started&&mode==='teacher')drawTeacherView();
+ }catch(err){
+  console.error('render loop error',err);
+  if(!renderErrorShown){renderErrorShown=true;toast('화면을 다시 불러오는 중입니다…')}
+ }
  requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
@@ -746,7 +765,7 @@ function drawTeacherRoleTag(ctx,p){
  ctx.font='bold 14px sans-serif';
  const w=ctx.measureText(text).width+16;
  ctx.fillStyle=fill;
- ctx.beginPath();ctx.roundRect(x-w/2,y-j-76,w,22,9);ctx.fill();
+ roundedPath(ctx,x-w/2,y-j-76,w,22,9);ctx.fill();
  ctx.fillStyle='#fff';ctx.textAlign='center';ctx.fillText(text,x,y-j-60);
  ctx.restore();
 }
@@ -778,6 +797,13 @@ teacherCanvas.addEventListener('pointercancel',()=>teacherDrag=null);
 
 
 
+
+function requestFreshState(){
+ if(mode==='student'&&roomCode&&socket.connected)socket.emit('requestState');
+}
+setInterval(requestFreshState,2000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(requestFreshState,100)});
+window.addEventListener('focus',()=>setTimeout(requestFreshState,100));
 
 function resumeSavedSession(){
  const s=loadSession();if(!s||mode==='teacher')return;
