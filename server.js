@@ -301,7 +301,7 @@ function spawnFishItems(r){
 }
 
 function distributeNPCs(r){
- const total=Math.max(1,Math.round(r.spies*2.5));
+ const total=Math.max(1,r.spies);
  r.npcs=[];
  for(let i=0;i<total;i++){
    const area=i%2; // 운동장 / 1층 균등 배치
