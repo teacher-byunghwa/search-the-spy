@@ -752,7 +752,14 @@ function drawPlayerView(){
  g.clearRect(0,0,gameCanvas.width,gameCanvas.height);g.save();g.translate(-cam.x,-cam.y);drawArea(g,p.floor);drawFishItems(g,p.floor);
  for(const n of npcs.filter(n=>n.floor===p.floor)){drawPerson(g,n);bubble(g,n)}
  for(const q of Object.values(players).filter(q=>q.floor===p.floor)){
-  drawPerson(g,q,{police:q.role==='police',revealed:q.revealed,name:myRole&&q.role===myRole&&currentPhase==='reveal'?q.nick:(myRole==='spy'&&q.role==='spy'&&q.alive?q.nick:'')});bubble(g,q)
+  let visibleName='';
+  if(myRole==='police'){
+    if(q.role==='police')visibleName=q.nick;
+    else if(q.role==='spy'&&q.revealed)visibleName=q.nick;
+  }else if(myRole==='spy'){
+    if(q.role==='police'||q.role==='spy')visibleName=q.nick;
+  }
+  drawPerson(g,q,{police:q.role==='police',revealed:q.revealed,name:visibleName});bubble(g,q)
  }
  g.restore();
 

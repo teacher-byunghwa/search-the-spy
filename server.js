@@ -316,7 +316,7 @@ function prepareRound(r){
  const shuffled=[...list].sort(()=>Math.random()-.5);
  shuffled.forEach((p,i)=>{
   p.role=i<r.spies?'spy':'police';p.alive=true;p.ghost=false;p.revealed=false;p.miss=0;
-  p.boostCharges=0;p.boostUntil=0;p.bubble='';p.bubbleUntil=0;p.jumpStart=0;p.jumpUntil=0;
+  p.boostCharges=(p.role==='spy'?1:0);p.boostUntil=0;p.bubble='';p.bubbleUntil=0;p.jumpStart=0;p.jumpUntil=0;
   Object.assign(p,safeSpawn(i%2));
  });
  distributeNPCs(r);
@@ -347,7 +347,7 @@ function startRound(r){
   if(r.phase!=='playing')return;
   const now=Date.now(),dt=(now-r.lastTick)/1000;r.lastTick=now;
   r.timeLeft=Math.max(0,r.timeLeft-dt);
-  if(!r.spiesRevealed && r.timeLeft<=90 && r.timeLeft>0){
+  if(!r.spiesRevealed && r.timeLeft<=60 && r.timeLeft>0){
     r.spiesRevealed=true;
     const ids=[];
     for(const p of r.players.values()){
