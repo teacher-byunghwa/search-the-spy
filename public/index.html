@@ -154,6 +154,19 @@
   <div class="hudBox">👩‍🏫 교사 관전</div><div class="hudBox bigInfo" id="teacherTimer">00:00</div><div class="hudBox" id="teacherStats">-</div>
   <button id="showQrInGame" class="teacherAction">📱 QR 다시 보기</button>
   <button id="forceEndGameBtn" class="teacherAction dangerAction">⛔ 게임 강제 종료</button>
+  <div id="teacherEventPanel" class="teacherEventPanel">
+   <div class="teacherEventTitle">🎛️ 교사 이벤트</div>
+   <div class="teacherEventRow">
+    <label for="speedSeconds">전체 속도 UP</label>
+    <input id="speedSeconds" type="number" min="1" max="60" value="5" inputmode="numeric">
+    <span>초</span>
+    <button id="teacherSpeedBtn" type="button">⚡ 발동</button>
+   </div>
+   <div class="teacherEventRow">
+    <span>전체 위치 공개</span>
+    <button id="teacherRevealBtn" type="button">📍 5초 공개</button>
+   </div>
+  </div>
  </div>
 <div id="floorTabs"><button data-floor="0">운동장</button><button data-floor="1">1층</button></div>
  <div id="teacherLegend">🔵 경찰 &nbsp; 🔴 스파이 &nbsp; ⚪ 학생 &nbsp; 👻 탈락</div>

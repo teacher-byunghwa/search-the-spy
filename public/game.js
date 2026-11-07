@@ -4,6 +4,8 @@ let mode=null,roomCode='',meId=null,myRole=null,teammates=[],players={},npcs=[],
 let selectedTeacherFloor=1,keys={},angle=0,boostUntil=0,swingT=0,last=performance.now(),cam={x:0,y:0},joy={pointerId:null,touchId:null,dx:0,dy:0};
 let latestScores=[],pendingJoin=null,revealCountdown=null,feed=[],teacherZoom=1,teacherPan={x:0,y:0},teacherDrag=null,localPortalCooldown=0;
 let fishItems=[],fishExpireAt=0,fishPickupPending=false;
+let globalSpeedUntil=0,revealAllUntil=0;
+
 const $=id=>document.getElementById(id),gameCanvas=$('gameCanvas'),g=gameCanvas.getContext('2d'),teacherCanvas=$('teacherCanvas'),tg=teacherCanvas.getContext('2d');
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const SESSION_KEY='spySchoolStudentSessionV12';
@@ -129,6 +131,29 @@ $('teacherChatInput').addEventListener('keydown',e=>{
 });
 
 
+
+$('teacherSpeedBtn').onclick=()=>{
+ const seconds=Math.max(1,Math.min(60,Math.round(Number($('speedSeconds').value)||5)));
+ $('speedSeconds').value=seconds;
+ socket.emit('teacherSpeedEvent',{code:roomCode,seconds},r=>{
+   if(!r?.ok)alert(r?.error||'이벤트 발동에 실패했습니다.');
+ });
+};
+$('teacherRevealBtn').onclick=()=>{
+ socket.emit('teacherRevealAll',{code:roomCode},r=>{
+   if(!r?.ok)alert(r?.error||'위치 공개에 실패했습니다.');
+ });
+};
+
+socket.on('globalSpeedEvent',e=>{
+ globalSpeedUntil=e.until||0;
+ toast(`⚡ 전체 속도 UP! ${e.seconds||0}초`);
+});
+socket.on('revealAllEvent',e=>{
+ revealAllUntil=e.until||0;
+ toast('📍 모든 학생 위치가 5초 동안 공개됩니다!');
+});
+
 $('forceEndGameBtn').onclick=()=>{
  if(!confirm('현재 게임을 강제로 종료할까요?\n강제 종료 시 어느 팀에도 점수가 추가되지 않습니다.'))return;
  socket.emit('forceEndGame',{code:roomCode},r=>{
@@ -231,7 +256,7 @@ socket.on('boosted',e=>{
 socket.on('boostUnavailable',e=>toast(e?.reason||'지금은 부스터를 사용할 수 없습니다.'));
 socket.on('gameEnded',e=>showEnd(e));
 
-socket.on('gameForceEnded',e=>{
+socket.on('gameForceEnded',e=>{renderMVP(null);
  started=false;currentPhase='ended';
  setPlayerGameVisible(false);setTeacherGameVisible(false);
  if(e?.scores){
@@ -248,7 +273,20 @@ socket.on('gameForceEnded',e=>{
 
 socket.on('roomClosed',()=>{alert('교사가 방을 종료했습니다.');clearSession();location.reload()});
 
-function showEnd(e){
+
+function renderMVP(mvp){
+ const box=$('mvpPanel');if(!box)return;
+ const cards=[];
+ if(mvp?.primary){
+   cards.push(`<div class="mvpCard"><div class="mvpTitle">🏆 ${escapeHtml(mvp.primary.title)}</div><div class="mvpNames">${(mvp.primary.names||[]).map(escapeHtml).join(' · ')}</div><div class="mvpValue">${escapeHtml(mvp.primary.label||'')}</div></div>`);
+ }
+ if(mvp?.fish){
+   cards.push(`<div class="mvpCard"><div class="mvpTitle">🐟 ${escapeHtml(mvp.fish.title)}</div><div class="mvpNames">${(mvp.fish.names||[]).map(escapeHtml).join(' · ')}</div><div class="mvpValue">${escapeHtml(mvp.fish.label||'')}</div></div>`);
+ }
+ box.innerHTML=cards.join('');
+}
+
+function showEnd(e){renderMVP(e?.mvp);
  started=false;setPlayerGameVisible(false);setTeacherGameVisible(false);currentPhase='ended';
  if(e?.scores){latestScores=e.scores;e.scores.forEach(s=>{if(players[s.id])players[s.id].score=s.score})}
  $('endTitle').textContent=e.winner==='spy'?'🕵️ 스파이팀 승리!':'🚔 경찰팀 승리!';$('endText').textContent=e.reason;
@@ -753,7 +791,9 @@ function drawPlayerView(){
  for(const n of npcs.filter(n=>n.floor===p.floor)){drawPerson(g,n);bubble(g,n)}
  for(const q of Object.values(players).filter(q=>q.floor===p.floor)){
   let visibleName='';
-  if(myRole==='police'){
+  if(Date.now()<revealAllUntil){
+    visibleName=q.nick;
+  }else if(myRole==='police'){
     if(q.role==='police')visibleName=q.nick;
     else if(q.role==='spy'&&q.revealed)visibleName=q.nick;
   }else if(myRole==='spy'){

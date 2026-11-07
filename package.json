@@ -1,6 +1,6 @@
 {
-  "name": "spy-school-multiplayer-v35",
-  "version": "5.9.0",
+  "name": "spy-school-multiplayer-v36",
+  "version": "6.0.0",
   "private": true,
   "scripts": {
     "start": "node server.js"

@@ -217,12 +217,54 @@ function safeSpawn(floor,preferred=null){
 }
 
 
+
+function computeMVP(r,winner){
+ const players=[...r.players.values()];
+ const now=Date.now();
+
+ // Finalize survival duration for still-living spies.
+ for(const p of players){
+  if(p.role==='spy'&&p.alive){
+   p.survivalMs=Math.max(p.survivalMs||0,now-(p.roundStartedAt||now));
+  }
+ }
+
+ let primary=null;
+ if(winner==='police'){
+  const cops=players.filter(p=>p.role==='police');
+  if(cops.length){
+   const max=Math.max(...cops.map(p=>p.spyHitCount||0));
+   const tied=cops.filter(p=>(p.spyHitCount||0)===max);
+   if(max>0)primary={type:'police',title:'가장 많은 스파이를 맞힌 경찰',names:tied.map(p=>p.nick),value:max,label:`${max}회 적중`};
+  }
+ }else if(winner==='spy'){
+  const spies=players.filter(p=>p.role==='spy');
+  if(spies.length){
+   const max=Math.max(...spies.map(p=>p.survivalMs||0));
+   const tied=spies.filter(p=>(p.survivalMs||0)===max);
+   primary={type:'spy',title:'가장 오래 살아남은 스파이',names:tied.map(p=>p.nick),value:max,label:`${Math.max(1,Math.round(max/1000))}초 생존`};
+  }
+ }
+
+ let fish=null;
+ if(players.length){
+  const maxFish=Math.max(...players.map(p=>p.fishEaten||0));
+  if(maxFish>0){
+   const tied=players.filter(p=>(p.fishEaten||0)===maxFish);
+   fish={type:'fish',title:'붕어빵을 가장 많이 먹은 학생',names:tied.map(p=>p.nick),value:maxFish,label:`${maxFish}개`};
+  }
+ }
+
+ return {primary,fish};
+}
+
 function finish(r,winner,reason){
  if(r.phase==='ended')return;
  r.phase='ended';clearLoops(r);
+ const mvp=computeMVP(r,winner);
  for(const p of r.players.values())if(p.role===winner)p.score=(p.score||0)+1;
  const scores=scoreBoard(r);
- io.to(r.code).emit('gameEnded',{winner,reason,scores});
+ io.to(r.code).emit('gameEnded',{winner,reason,scores,mvp});
  io.to(r.code).emit('scoreBoard',scores);
  pushState(r);
 }
@@ -523,12 +565,12 @@ io.on('connection',socket=>{
   io.to(att.socketId).emit('swingResult',{kind:best?'hit':'miss'});if(!best)return;
 
   if(type==='player'&&best.role==='spy'){
-    best.spyHits=(best.spyHits||0)+1;
+    best.spyHits=(best.spyHits||0)+1;att.spyHitCount=(att.spyHitCount||0)+1;
     best.revealed=true;
     const lives=Math.max(0,2-best.spyHits);
 
     if(best.spyHits>=2){
-      best.alive=false;best.ghost=true;best.bubble='두 번째 타격! 스파이 탈락!';best.bubbleUntil=Date.now()+1800;
+      best.alive=false;best.ghost=true;best.survivalMs=Math.max(0,Date.now()-(best.roundStartedAt||Date.now()));best.bubble='두 번째 타격! 스파이 탈락!';best.bubbleUntil=Date.now()+1800;
       att.miss=0;
       io.to(r.code).emit('spyHit',{targetId:best.id,by:att.id,hits:best.spyHits,lives:0,out:true});
       io.to(r.code).emit('spyCaught',{spyId:best.id,by:att.id,spyNick:best.nick,policeNick:att.nick,policeMissReset:true});
@@ -565,7 +607,7 @@ io.on('connection',socket=>{
   if(!fish||fish.floor!==p.floor||Math.hypot(fish.x-p.x,fish.y-p.y)>90)return;
 
   fish.active=false;
-  p.boostCharges=(p.boostCharges||0)+1;
+  p.boostCharges=(p.boostCharges||0)+1;p.fishEaten=(p.fishEaten||0)+1;
   p.bubble=`붕어빵 +1! (보유 ${p.boostCharges})`;
   p.bubbleUntil=Date.now()+1800;
 
@@ -595,6 +637,27 @@ io.on('connection',socket=>{
     text:p.bubble,bubbleUntil:p.bubbleUntil
   });
   pushState(r);
+ });
+
+ socket.on('teacherSpeedEvent',({code,seconds},cb)=>{
+  const r=rooms.get(String(code||''));
+  if(!r||socket.id!==r.teacherId)return cb?.({ok:false,error:'교사만 사용할 수 있습니다.'});
+  seconds=Math.max(1,Math.min(60,Math.round(Number(seconds)||0)));
+  if(!['reveal','playing'].includes(r.phase))return cb?.({ok:false,error:'게임 중에만 사용할 수 있습니다.'});
+  r.globalSpeedUntil=Date.now()+seconds*1000;
+  io.to(r.code).emit('globalSpeedEvent',{until:r.globalSpeedUntil,seconds});
+  pushState(r);
+  cb?.({ok:true});
+ });
+
+ socket.on('teacherRevealAll',({code},cb)=>{
+  const r=rooms.get(String(code||''));
+  if(!r||socket.id!==r.teacherId)return cb?.({ok:false,error:'교사만 사용할 수 있습니다.'});
+  if(!['reveal','playing'].includes(r.phase))return cb?.({ok:false,error:'게임 중에만 사용할 수 있습니다.'});
+  r.revealAllUntil=Date.now()+5000;
+  io.to(r.code).emit('revealAllEvent',{until:r.revealAllUntil,seconds:5});
+  pushState(r);
+  cb?.({ok:true});
  });
 
  socket.on('forceEndGame',({code},cb)=>{
